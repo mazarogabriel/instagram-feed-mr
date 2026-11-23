@@ -1,111 +1,161 @@
-import { Client } from "@notionhq/client";
 import type { NotionPost } from "./types";
-import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
-let notion: Client | null = null;
+const NOTION_API_VERSION = "2026-03-11";
+const NOTION_API_BASE = "https://api.notion.com/v1";
 
-function getClient(): Client {
-  if (!notion) {
-    notion = new Client({ auth: process.env.NOTION_TOKEN });
+type NotionProperty = {
+  type?: string;
+  title?: Array<{ plain_text?: string }>;
+  files?: Array<
+    | { type: "file"; file?: { url?: string } }
+    | { type: "external"; external?: { url?: string } }
+  >;
+  date?: { start?: string | null } | null;
+  status?: { name?: string } | null;
+};
+
+type NotionPage = {
+  id: string;
+  object: "page";
+  properties: Record<string, NotionProperty>;
+};
+
+type DataSourceQueryResponse = {
+  results: NotionPage[];
+  has_more: boolean;
+  next_cursor: string | null;
+};
+
+const DATA_SOURCE_ID =
+  process.env.NOTION_DATA_SOURCE_ID ?? "c394a082-c32a-8389-8345-077f489e674f";
+
+const MR_COMPANY_PAGE_ID =
+  process.env.NOTION_COMPANY_PAGE_ID ?? "c444a082-c32a-8350-adfc-0110adbf4fa7";
+
+function getToken(): string {
+  const token = process.env.NOTION_TOKEN;
+  if (!token) {
+    throw new Error("NOTION_TOKEN não está configurado nas variáveis de ambiente.");
   }
-  return notion;
+  return token;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractTitle(prop: any): string {
-  if (!prop || prop.type !== "title") return "Untitled";
-  return (prop.title as Array<{ plain_text: string }>)
-    .map((t) => t.plain_text)
-    .join("") || "Untitled";
+async function queryDataSource(
+  startCursor?: string
+): Promise<DataSourceQueryResponse> {
+  const response = await fetch(
+    NOTION_API_BASE + "/data_sources/" + DATA_SOURCE_ID + "/query",
+    {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + getToken(),
+        "Notion-Version": NOTION_API_VERSION,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        result_type: "page",
+        page_size: 100,
+        ...(startCursor ? { start_cursor: startCursor } : {}),
+        filter: {
+          and: [
+            {
+              property: "Rede Social",
+              multi_select: { contains: "Instagram" },
+            },
+            {
+              property: "Empresa",
+              relation: { contains: MR_COMPANY_PAGE_ID },
+            },
+          ],
+        },
+        sorts: [
+          {
+            property: "Data de Publicação",
+            direction: "descending",
+          },
+        ],
+      }),
+      cache: "no-store",
+    }
+  );
+
+  const payload = (await response.json()) as
+    | DataSourceQueryResponse
+    | { message?: string; code?: string };
+
+  if (!response.ok) {
+    const errorPayload = payload as { message?: string; code?: string };
+    const detail = errorPayload.message ?? "Erro desconhecido";
+    throw new Error(
+      "Notion API (" +
+        response.status +
+        (errorPayload.code ? ", " + errorPayload.code : "") +
+        "): " +
+        detail
+    );
+  }
+
+  return payload as DataSourceQueryResponse;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractFileUrl(prop: any): string | null {
-  if (!prop || prop.type !== "files") return null;
-  const file = prop.files[0];
-  if (!file) return null;
-  if (file.type === "file") return file.file.url;
-  if (file.type === "external") return file.external.url;
+function extractTitle(properties: Record<string, NotionProperty>): string {
+  const titleProperty =
+    properties["Tema"] ??
+    Object.values(properties).find((property) => property.type === "title");
+
+  return (
+    titleProperty?.title?.map((item) => item.plain_text ?? "").join("") ||
+    "Sem título"
+  );
+}
+
+function extractImage(properties: Record<string, NotionProperty>): string | null {
+  const files = properties["Imagens"]?.files ?? [];
+  const firstFile = files[0];
+
+  if (!firstFile) return null;
+  if (firstFile.type === "file") return firstFile.file?.url ?? null;
+  if (firstFile.type === "external") return firstFile.external?.url ?? null;
   return null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractDate(prop: any): string | null {
-  if (!prop || prop.type !== "date") return null;
-  return prop.date?.start ?? null;
+function extractPublishDate(
+  properties: Record<string, NotionProperty>
+): string | null {
+  return properties["Data de Publicação"]?.date?.start ?? null;
 }
 
-// Handles both "select" and "status" property types
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractStatus(prop: any): string | null {
-  if (!prop) return null;
-  if (prop.type === "select") return prop.select?.name ?? null;
-  if (prop.type === "status") return prop.status?.name ?? null;
-  return null;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractNumber(prop: any): number | null {
-  if (!prop || prop.type !== "number") return null;
-  return prop.number ?? null;
+function extractStatus(properties: Record<string, NotionProperty>): string | null {
+  return properties["Status"]?.status?.name ?? null;
 }
 
 export async function fetchPosts(): Promise<NotionPost[]> {
-  const client = getClient();
-  const databaseId = process.env.NOTION_DATABASE_ID;
-
-  if (!databaseId) {
-    throw new Error("NOTION_DATABASE_ID is not set");
-  }
-
-  const response = await client.databases.query({
-    database_id: databaseId,
-    page_size: 100,
-  });
-
   const posts: NotionPost[] = [];
+  let cursor: string | undefined;
 
-  for (const page of response.results) {
-    if (page.object !== "page") continue;
-    const p = page as PageObjectResponse;
-    const props = p.properties;
+  // Notion limits a single query to 10,000 results. The widget only requests
+  // the MR + Instagram publications, not the entire workspace.
+  do {
+    const page = await queryDataSource(cursor);
+    posts.push(
+      ...page.results.map((item) => ({
+        id: item.id,
+        title: extractTitle(item.properties),
+        thumbnail: extractImage(item.properties),
+        publishDate: extractPublishDate(item.properties),
+        status: extractStatus(item.properties),
+      }))
+    );
 
-    // Title — always auto-detected by type
-    const titleProp = Object.values(props).find((v) => v.type === "title");
+    cursor = page.has_more && page.next_cursor ? page.next_cursor : undefined;
+  } while (cursor && posts.length < 10_000);
 
-    // Thumbnail — supports: Images, Thumbnail, thumbnail, Cover
-    const thumbnailProp =
-      props["Images"] ??
-      props["Thumbnail"] ??
-      props["thumbnail"] ??
-      props["Cover"] ??
-      props["cover"];
-
-    // Date — supports: Data publicação, Publish Date, publish_date, Date
-    const dateProp =
-      props["Data publicação"] ??
-      props["Publish Date"] ??
-      props["publish_date"] ??
-      props["Date"];
-
-    // Status — supports select and status types
-    const statusProp = props["Status"] ?? props["status"];
-
-    // Grid Order — supports: Grid Order, grid_order, Order
-    const orderProp =
-      props["Grid Order"] ??
-      props["grid_order"] ??
-      props["Order"];
-
-    posts.push({
-      id: p.id,
-      title: extractTitle(titleProp),
-      thumbnail: extractFileUrl(thumbnailProp),
-      publishDate: extractDate(dateProp),
-      status: extractStatus(statusProp),
-      gridOrder: extractNumber(orderProp),
-    });
-  }
-
-  return posts;
+  return posts.sort((a, b) => {
+    if (!a.publishDate && !b.publishDate) return 0;
+    if (!a.publishDate) return 1;
+    if (!b.publishDate) return -1;
+    return (
+      new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime()
+    );
+  });
 }
