@@ -4,7 +4,6 @@ export interface NotionPost {
   thumbnail: string | null;
   publishDate: string | null;
   status: string | null;
-  gridOrder: number | null;
 }
 
 export interface Profile {
@@ -20,7 +19,7 @@ export interface Highlight {
   emoji: string;
 }
 
-export type SortMode = "date" | "custom";
+export type SortMode = "date";
 
 export interface WidgetSettings {
   showBio: boolean;
