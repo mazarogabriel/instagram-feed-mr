@@ -7,14 +7,11 @@ export const revalidate = 0;
 
 function getProfile(): Profile {
   return {
-    username: process.env.NEXT_PUBLIC_PROFILE_USERNAME ?? "yourusername",
-    displayName:
-      process.env.NEXT_PUBLIC_PROFILE_DISPLAY_NAME ?? "Your Name",
-    bio: process.env.NEXT_PUBLIC_PROFILE_BIO ?? "Your bio ✨",
+    username: process.env.NEXT_PUBLIC_PROFILE_USERNAME ?? "mr.melinaromano",
+    displayName: process.env.NEXT_PUBLIC_PROFILE_DISPLAY_NAME ?? "Melina Romano Studio",
+    bio: process.env.NEXT_PUBLIC_PROFILE_BIO ?? "Arquitetura, interiores, design e arte.",
     website: process.env.NEXT_PUBLIC_PROFILE_WEBSITE ?? "",
-    avatarUrl:
-      process.env.NEXT_PUBLIC_PROFILE_AVATAR_URL ??
-      "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop",
+    avatarUrl: process.env.NEXT_PUBLIC_PROFILE_AVATAR_URL ?? "",
   };
 }
 
@@ -31,27 +28,20 @@ function getHighlights(): Highlight[] {
 export default async function HomePage() {
   const profile = getProfile();
   const highlights = getHighlights();
-
   let initialPosts: NotionPost[] = [];
   let initialError: string | undefined;
 
   try {
     initialPosts = await fetchPosts();
-  } catch (e) {
-    initialError =
-      e instanceof Error
-        ? e.message
-        : "Could not connect to Notion. Please check your environment variables.";
+  } catch (error) {
+    initialError = error instanceof Error
+      ? error.message
+      : "Não foi possível conectar ao Notion. Verifique as variáveis de ambiente.";
   }
 
   return (
     <main className="w-full min-h-screen bg-white">
-      <InstagramWidget
-        initialPosts={initialPosts}
-        profile={profile}
-        highlights={highlights}
-        initialError={initialError}
-      />
+      <InstagramWidget initialPosts={initialPosts} profile={profile} highlights={highlights} initialError={initialError} />
     </main>
   );
 }
