@@ -217,15 +217,19 @@ export default function InstagramWidget({
 
         if (disposed || !data.revisions) return;
 
-        (["mr", "lab"] as ProfileKey[]).forEach((profileKey) => {
+        const changedProfiles = (["mr", "lab"] as ProfileKey[]).filter((profileKey) => {
           const nextRevision = data.revisions[profileKey];
-          if (
+          return (
             typeof nextRevision === "string" &&
             nextRevision !== currentRevisions.current[profileKey]
-          ) {
-            void loadPosts(profileKey, true);
-          }
+          );
         });
+
+        // Keep the polling cycle locked until any changed profile finishes
+        // loading, preventing duplicate refreshes on slow Notion responses.
+        await Promise.all(
+          changedProfiles.map((profileKey) => loadPosts(profileKey, true))
+        );
       } catch {
         // Background checks stay quiet; the manual refresh remains available.
       } finally {
