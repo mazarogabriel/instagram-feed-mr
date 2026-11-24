@@ -9,12 +9,16 @@ import { formatDate } from "@/lib/utils";
 interface PostDetailModalProps {
   post: NotionPost;
   profileName: string;
+  loadingMedia?: boolean;
+  mediaError?: string;
   onClose: () => void;
 }
 
 export default function PostDetailModal({
   post,
   profileName,
+  loadingMedia = false,
+  mediaError,
   onClose,
 }: PostDetailModalProps) {
   const media = useMemo<StoryMedia[]>(() => {
@@ -116,7 +120,9 @@ export default function PostDetailModal({
               ))
             ) : (
               <div className="flex min-h-[220px] w-full min-w-full items-center justify-center p-8 text-center text-sm text-[#77736d]">
-                Nenhuma imagem ou vídeo cadastrado
+                {loadingMedia
+                  ? "Carregando imagens e vídeos…"
+                  : mediaError ?? "Nenhuma imagem ou vídeo cadastrado"}
               </div>
             )}
           </div>
@@ -160,6 +166,16 @@ export default function PostDetailModal({
               {media.length > 1 && (
                 <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-[#8e8e8e]">
                   <Images size={12} /> Carrossel · {media.length} mídias
+                </p>
+              )}
+              {loadingMedia && (
+                <p className="mt-1 text-[10px] text-[#8e8e8e]">
+                  Carregando mídias em segundo plano…
+                </p>
+              )}
+              {mediaError && (
+                <p className="mt-1 text-[10px] text-red-600">
+                  {mediaError}
                 </p>
               )}
               {media.length === 1 && media[0].kind === "video" && (
