@@ -291,44 +291,46 @@ export default function InstagramWidget({
 
   return (
     <div className="w-full max-w-[430px] min-h-[780px] overflow-hidden rounded-[28px] border border-[#e8e6e2] bg-white shadow-[0_18px_55px_rgba(28,25,20,0.10)]">
-      <div className="flex items-center justify-center gap-3 border-b border-[#efefef] bg-white px-3 py-3">
-        {(["mr", "lab"] as ProfileKey[]).map((profileKey) => {
-          const config = profileConfigs[profileKey];
-          const active = activeProfile === profileKey;
-          const hasPublishedStories = (postsByProfile[profileKey] ?? []).some(
-            (post) => post.format === "Stories" && post.status === "Publicado"
-          );
+      <div className="flex items-center justify-center border-b border-[#efefef] bg-white px-3 py-3">
+        <div className="inline-flex items-center rounded-full bg-[#f4f4f4] p-1">
+          {(["mr", "lab"] as ProfileKey[]).map((profileKey) => {
+            const config = profileConfigs[profileKey];
+            const active = activeProfile === profileKey;
+            const hasPublishedStories = (postsByProfile[profileKey] ?? []).some(
+              (post) => post.format === "Stories" && post.status === "Publicado"
+            );
 
-          return (
-            <button
-              key={profileKey}
-              type="button"
-              onClick={() => switchProfile(profileKey)}
-              aria-label={"Alternar para " + config.name}
-              title={config.name}
-              aria-pressed={active}
-              className={
-                "relative h-[50px] w-[50px] flex-shrink-0 rounded-full p-[2px] transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0095f6] " +
-                (hasPublishedStories
-                  ? "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600"
-                  : active
-                    ? "bg-[#262626] shadow-md"
-                    : "bg-[#e5e5e5] opacity-70 hover:opacity-100")
-              }
-            >
-              <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-white p-[2px]">
-                <Image
-                  src={config.logo}
-                  alt={config.name}
-                  width={42}
-                  height={42}
-                  className="h-full w-full rounded-full bg-white object-contain"
-                  unoptimized
-                />
-              </span>
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={profileKey}
+                type="button"
+                onClick={() => switchProfile(profileKey)}
+                aria-label={"Alternar para " + config.name}
+                title={config.name}
+                aria-pressed={active}
+                className={
+                  "relative flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-full p-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0095f6] " +
+                  (hasPublishedStories
+                    ? "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600"
+                    : active
+                      ? "bg-white shadow-sm"
+                      : "bg-transparent opacity-70 hover:opacity-100")
+                }
+              >
+                <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-white">
+                  <Image
+                    src={config.logo}
+                    alt={config.name}
+                    width={22}
+                    height={22}
+                    className="h-[22px] w-[22px] rounded-full bg-white object-contain"
+                    unoptimized
+                  />
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {settings.showBio && (
