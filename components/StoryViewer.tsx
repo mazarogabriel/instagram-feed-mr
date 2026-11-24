@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
@@ -39,7 +39,32 @@ export default function StoryViewer({
   }, [posts]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [remainingTime, setRemainingTime] = useState(IMAGE_DURATION);
+  const timerStartedAt = useRef<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const current = slides[activeIndex];
+
+  const pauseStory = () => {
+    if (isPaused) return;
+
+    if (current?.media?.kind !== "video" && timerStartedAt.current !== null) {
+      const elapsed = Date.now() - timerStartedAt.current;
+      setRemainingTime((previous) => Math.max(0, previous - elapsed));
+    }
+
+    setIsPaused(true);
+    videoRef.current?.pause();
+  };
+
+  const resumeStory = () => {
+    setIsPaused(false);
+    if (current?.media?.kind === "video") {
+      void videoRef.current?.play().catch(() => {
+        // Playback can remain paused if the browser blocks autoplay.
+      });
+    }
+  };
 
   const next = () => {
     if (activeIndex >= slides.length - 1) {
@@ -65,19 +90,40 @@ export default function StoryViewer({
   }, [activeIndex, slides.length, onClose]);
 
   useEffect(() => {
-    if (!current || current.media?.kind === "video") return;
-    const timer = window.setTimeout(next, IMAGE_DURATION);
-    return () => window.clearTimeout(timer);
-  }, [activeIndex, current]);
+    setRemainingTime(IMAGE_DURATION);
+    setIsPaused(false);
+  }, [activeIndex]);
+
+  useEffect(() => {
+    if (!current || current.media?.kind === "video" || isPaused) {
+      timerStartedAt.current = null;
+      return;
+    }
+
+    timerStartedAt.current = Date.now();
+    const timer = window.setTimeout(next, remainingTime);
+
+    return () => {
+      window.clearTimeout(timer);
+      timerStartedAt.current = null;
+    };
+  }, [activeIndex, current, isPaused, remainingTime]);
 
   if (!current) return null;
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black sm:p-5">
-      <div className="relative h-[100dvh] w-full max-w-[430px] overflow-hidden bg-[#111] sm:h-[min(92vh,850px)] sm:rounded-2xl">
+      <div
+        className="relative h-[100dvh] w-full max-w-[430px] overflow-hidden bg-[#111] sm:h-[min(92vh,850px)] sm:rounded-2xl"
+        onPointerDown={pauseStory}
+        onPointerUp={resumeStory}
+        onPointerCancel={resumeStory}
+        onPointerLeave={resumeStory}
+      >
         <div className="absolute inset-0">
           {current.media?.kind === "video" ? (
             <video
+              ref={videoRef}
               key={current.media.url}
               src={current.media.url}
               autoPlay
@@ -126,7 +172,10 @@ export default function StoryViewer({
                 }
                 style={
                   index === activeIndex && current.media?.kind !== "video"
-                    ? { animationDuration: String(IMAGE_DURATION) + "ms" }
+                    ? {
+                        animationDuration: String(IMAGE_DURATION) + "ms",
+                        animationPlayState: isPaused ? "paused" : "running",
+                      }
                     : undefined
                 }
               />
