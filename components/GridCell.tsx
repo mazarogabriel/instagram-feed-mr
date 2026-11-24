@@ -60,7 +60,7 @@ export default function GridCell({ post, onClick }: GridCellProps) {
             className="object-cover transition-transform duration-300 group-hover:scale-105"
             onError={() => setImgError(true)}
             sizes="(max-width: 430px) 33vw, 140px"
-            unoptimized
+            quality={60}
           />
         ) : (
           <PlaceholderCell title={post.title} />
