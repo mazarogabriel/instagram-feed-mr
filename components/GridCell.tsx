@@ -32,6 +32,7 @@ export default function GridCell({ post, onClick }: GridCellProps) {
       ? post.media.find((asset) => asset.kind === "video")
       : null;
   const mediaCount = post.media?.length ?? 0;
+  const isCarousel = post.format === "Carrossel/Editorial" || mediaCount > 1;
 
   return (
     <button
@@ -88,8 +89,8 @@ export default function GridCell({ post, onClick }: GridCellProps) {
       </div>
 
       <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
-        {mediaCount > 1 && (
-          <span className="rounded bg-black/45 p-1 text-white" title={mediaCount + " mídias"}>
+        {isCarousel && (
+          <span className="rounded bg-black/45 p-1 text-white" title={mediaCount > 1 ? mediaCount + " mídias" : "Carrossel"}>
             <Copy size={12} />
           </span>
         )}
