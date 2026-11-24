@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, Images, Play } from "lucide-react";
+import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
@@ -30,6 +30,7 @@ export default function PostDetailModal({
   }, [post]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const mediaTrackRef = useRef<HTMLDivElement>(null);
   const isReel = post.format?.trim().toLocaleLowerCase("pt-BR") === "reels";
 
@@ -51,6 +52,7 @@ export default function PostDetailModal({
 
   useEffect(() => {
     setActiveIndex(0);
+    setDetailsExpanded(false);
     mediaTrackRef.current?.scrollTo({ left: 0, behavior: "auto" });
   }, [post.id]);
 
@@ -94,7 +96,7 @@ export default function PostDetailModal({
           className={
             "relative flex w-full flex-shrink-0 items-center justify-center overflow-hidden " +
             (isReel
-              ? "absolute inset-0 h-full max-h-full bg-black sm:relative sm:inset-auto sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
+              ? "h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
               : "max-h-[55vh] self-start overflow-y-auto bg-white sm:h-[92vh] sm:max-h-none sm:w-[48%] sm:overflow-hidden sm:bg-[#111]")
           }
         >
@@ -199,30 +201,45 @@ export default function PostDetailModal({
           className={
             "z-20 flex min-h-0 flex-col " +
             (isReel
-              ? "absolute inset-x-0 bottom-0 max-h-[38dvh] overflow-y-auto bg-gradient-to-t from-black/90 via-black/65 to-black/20 text-white sm:relative sm:inset-auto sm:max-h-none sm:flex-1 sm:overflow-y-auto sm:bg-white sm:text-[#262626]"
+              ? detailsExpanded
+                ? "absolute inset-x-0 bottom-0 h-[68dvh] max-h-[68dvh] overflow-hidden bg-white text-[#262626] shadow-[0_-12px_40px_rgba(0,0,0,0.28)] sm:relative sm:inset-auto sm:h-auto sm:max-h-none sm:flex-1 sm:bg-white sm:shadow-none"
+                : "relative h-[104px] max-h-[104px] flex-shrink-0 overflow-hidden bg-white text-[#262626] sm:relative sm:inset-auto sm:h-auto sm:max-h-none sm:flex-1 sm:bg-white"
               : "flex-1")
           }
         >
-          <div className={"flex items-start justify-between gap-4 border-b px-5 py-4 " + (isReel ? "border-white/15 sm:border-[#efefef]" : "border-[#efefef]")}>
+          <div
+            className={"flex flex-shrink-0 items-start justify-between gap-4 border-b px-5 py-4 " + (isReel ? "cursor-pointer border-[#efefef] text-[#262626]" : "border-[#efefef]")}
+            onClick={isReel ? () => setDetailsExpanded((expanded) => !expanded) : undefined}
+            onKeyDown={isReel ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setDetailsExpanded((expanded) => !expanded);
+              }
+            } : undefined}
+            role={isReel ? "button" : undefined}
+            tabIndex={isReel ? 0 : undefined}
+            aria-expanded={isReel ? detailsExpanded : undefined}
+            aria-label={isReel ? (detailsExpanded ? "Recolher detalhes do Reel" : "Expandir detalhes do Reel") : undefined}
+          >
             <div className="min-w-0">
-              <p className={"text-[11px] font-semibold uppercase tracking-[0.14em] " + (isReel ? "text-white/75 sm:text-[#8e8e8e]" : "text-[#8e8e8e]")}>
+              <p className={"text-[11px] font-semibold uppercase tracking-[0.14em] " + (isReel ? "text-[#8e8e8e]" : "text-[#8e8e8e]")}>
                 {profileName}
               </p>
-              <h2 className={"mt-1 text-base font-semibold leading-snug " + (isReel ? "text-white sm:text-[#262626]" : "text-[#262626]")}>
+              <h2 className="mt-1 text-base font-semibold leading-snug text-[#262626]">
                 {post.title}
               </h2>
               {media.length > 1 && (
-                <p className={"mt-1 inline-flex items-center gap-1 text-[10px] " + (isReel ? "text-white/75 sm:text-[#8e8e8e]" : "text-[#8e8e8e]")}>
+                <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-[#8e8e8e]">
                   <Images size={12} /> Carrossel · {media.length} mídias
                 </p>
               )}
               {loadingMedia && (
-                <p className={"mt-1 text-[10px] " + (isReel ? "text-white/75 sm:text-[#8e8e8e]" : "text-[#8e8e8e]")}>
+                <p className="mt-1 text-[10px] text-[#8e8e8e]">
                   Carregando mídias em segundo plano…
                 </p>
               )}
               {mediaError && (
-                <p className="mt-1 text-[10px] text-red-300 sm:text-red-600">
+                <p className="mt-1 text-[10px] text-red-600">
                   {mediaError}
                 </p>
               )}
@@ -232,17 +249,44 @@ export default function PostDetailModal({
                 </p>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Fechar publicação"
-              className={"rounded-full p-1.5 transition-colors " + (isReel ? "text-white hover:bg-white/15 sm:text-[#6f6f6f] sm:hover:bg-[#f2f2f2]" : "text-[#6f6f6f] hover:bg-[#f2f2f2]")}
-            >
-              <X size={19} />
-            </button>
+            {isReel ? (
+              <div className="flex flex-shrink-0 items-center gap-2">
+                <span className="hidden text-[11px] font-medium text-[#8e8e8e] sm:inline">
+                  {detailsExpanded ? "Recolher" : "Ver legenda"}
+                </span>
+                <span className="rounded-full bg-[#f2f1ee] p-1.5 text-[#555]">
+                  {detailsExpanded ? <ChevronDown size={17} /> : <ChevronUp size={17} />}
+                </span>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onClose();
+                  }}
+                  aria-label="Fechar Reel"
+                  className="hidden rounded-full p-1.5 text-[#6f6f6f] transition-colors hover:bg-[#f2f2f2] sm:block"
+                >
+                  <X size={19} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Fechar publicação"
+                className="rounded-full p-1.5 text-[#6f6f6f] transition-colors hover:bg-[#f2f2f2]"
+              >
+                <X size={19} />
+              </button>
+            )}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div
+            className={
+              "min-h-0 flex-1 overflow-y-auto px-5 py-4 " +
+              (isReel && !detailsExpanded ? "hidden sm:block" : "")
+            }
+          >
             <div className={"mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] " + (isReel ? "text-white/75 sm:text-[#77736d]" : "text-[#77736d]")}>
               {post.publishDate && (
                 <span className="inline-flex items-center gap-1.5">
