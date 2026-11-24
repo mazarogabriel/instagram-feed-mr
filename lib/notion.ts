@@ -26,6 +26,19 @@ type DataSourceQueryResponse = {
   next_cursor: string | null;
 };
 
+type NotionBlock = {
+  id: string;
+  type: string;
+  has_children?: boolean;
+  [key: string]: unknown;
+};
+
+type BlockChildrenResponse = {
+  results: NotionBlock[];
+  has_more: boolean;
+  next_cursor: string | null;
+};
+
 const DATA_SOURCE_ID =
   process.env.NOTION_DATA_SOURCE_ID ?? "c394a082-c32a-8389-8345-077f489e674f";
 
@@ -40,6 +53,14 @@ function getToken(): string {
   return token;
 }
 
+function notionHeaders(token: string): HeadersInit {
+  return {
+    Authorization: "Bearer " + token,
+    "Notion-Version": NOTION_API_VERSION,
+    "Content-Type": "application/json",
+  };
+}
+
 async function queryDataSource(
   startCursor?: string
 ): Promise<DataSourceQueryResponse> {
@@ -47,11 +68,7 @@ async function queryDataSource(
     NOTION_API_BASE + "/data_sources/" + DATA_SOURCE_ID + "/query",
     {
       method: "POST",
-      headers: {
-        Authorization: "Bearer " + getToken(),
-        "Notion-Version": NOTION_API_VERSION,
-        "Content-Type": "application/json",
-      },
+      headers: notionHeaders(getToken()),
       body: JSON.stringify({
         result_type: "page",
         page_size: 100,
@@ -119,6 +136,97 @@ function extractImage(properties: Record<string, NotionProperty>): string | null
   return null;
 }
 
+function imageUrlFromBlock(block: NotionBlock): string | null {
+  if (block.type !== "image") return null;
+
+  const image = block.image as
+    | {
+        type?: string;
+        file?: { url?: string };
+        external?: { url?: string };
+      }
+    | undefined;
+
+  if (!image) return null;
+  if (image.type === "file") return image.file?.url ?? null;
+  if (image.type === "external") return image.external?.url ?? null;
+  return image.file?.url ?? image.external?.url ?? null;
+}
+
+async function getBlockChildren(
+  blockId: string,
+  token: string,
+  startCursor?: string
+): Promise<BlockChildrenResponse> {
+  const params = new URLSearchParams({ page_size: "100" });
+  if (startCursor) params.set("start_cursor", startCursor);
+
+  const response = await fetch(
+    NOTION_API_BASE + "/blocks/" + blockId + "/children?" + params.toString(),
+    {
+      headers: notionHeaders(token),
+      cache: "no-store",
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error("Não foi possível ler os blocos da publicação.");
+  }
+
+  return (await response.json()) as BlockChildrenResponse;
+}
+
+async function findImageInBlocks(
+  blockId: string,
+  token: string,
+  depth = 0
+): Promise<string | null> {
+  if (depth > 4) return null;
+
+  let cursor: string | undefined;
+  do {
+    const page = await getBlockChildren(blockId, token, cursor);
+
+    for (const block of page.results) {
+      const imageUrl = imageUrlFromBlock(block);
+      if (imageUrl) return imageUrl;
+
+      // Images are often nested inside Notion columns. Follow only blocks
+      // that actually contain children, with a shallow depth limit.
+      if (block.has_children) {
+        const nestedImage = await findImageInBlocks(block.id, token, depth + 1);
+        if (nestedImage) return nestedImage;
+      }
+    }
+
+    cursor = page.has_more ? page.next_cursor ?? undefined : undefined;
+  } while (cursor);
+
+  return null;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index]);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  );
+  return results;
+}
+
 function extractPublishDate(
   properties: Record<string, NotionProperty>
 ): string | null {
@@ -130,32 +238,44 @@ function extractStatus(properties: Record<string, NotionProperty>): string | nul
 }
 
 export async function fetchPosts(): Promise<NotionPost[]> {
-  const posts: NotionPost[] = [];
+  const pages: NotionPage[] = [];
   let cursor: string | undefined;
 
-  // Notion limits a single query to 10,000 results. The widget only requests
-  // the MR + Instagram publications, not the entire workspace.
   do {
     const page = await queryDataSource(cursor);
-    posts.push(
-      ...page.results.map((item) => ({
-        id: item.id,
-        title: extractTitle(item.properties),
-        thumbnail: extractImage(item.properties),
-        publishDate: extractPublishDate(item.properties),
-        status: extractStatus(item.properties),
-      }))
-    );
-
+    pages.push(...page.results);
     cursor = page.has_more && page.next_cursor ? page.next_cursor : undefined;
-  } while (cursor && posts.length < 10_000);
+  } while (cursor && pages.length < 10_000);
+
+  const token = getToken();
+  const posts = await mapWithConcurrency(pages, 3, async (item) => {
+    const propertyThumbnail = extractImage(item.properties);
+    let thumbnail = propertyThumbnail;
+
+    // The MR calendar frequently stores the artwork as an image block inside
+    // the page body rather than in the "Imagens" property. Use that as a
+    // fallback so the grid can display the artwork already attached to posts.
+    if (!thumbnail) {
+      try {
+        thumbnail = await findImageInBlocks(item.id, token);
+      } catch {
+        thumbnail = null;
+      }
+    }
+
+    return {
+      id: item.id,
+      title: extractTitle(item.properties),
+      thumbnail,
+      publishDate: extractPublishDate(item.properties),
+      status: extractStatus(item.properties),
+    };
+  });
 
   return posts.sort((a, b) => {
     if (!a.publishDate && !b.publishDate) return 0;
     if (!a.publishDate) return 1;
     if (!b.publishDate) return -1;
-    return (
-      new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime()
-    );
+    return b.publishDate.localeCompare(a.publishDate);
   });
 }
