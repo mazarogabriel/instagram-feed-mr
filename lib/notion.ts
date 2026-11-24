@@ -81,9 +81,32 @@ function notionHeaders(token: string): HeadersInit {
 
 async function queryDataSource(
   profile: ProfileKey,
+  onlyPublishedStories: boolean,
   startCursor?: string
 ): Promise<DataSourceQueryResponse> {
   const companyId = PROFILE_COMPANY_IDS[profile];
+  const filters = [
+    {
+      property: "Empresa",
+      relation: { contains: companyId },
+    },
+    onlyPublishedStories
+      ? {
+          property: "Tipo/Formato",
+          select: { equals: "Stories" },
+        }
+      : {
+          property: "Rede Social",
+          multi_select: { contains: "Instagram" },
+        },
+  ];
+
+  if (onlyPublishedStories) {
+    filters.push({
+      property: "Status",
+      status: { equals: "Publicado" },
+    } as (typeof filters)[number]);
+  }
 
   const response = await fetch(
     NOTION_API_BASE + "/data_sources/" + DATA_SOURCE_ID + "/query",
@@ -94,34 +117,7 @@ async function queryDataSource(
         result_type: "page",
         page_size: 100,
         ...(startCursor ? { start_cursor: startCursor } : {}),
-        filter: {
-          and: [
-            {
-              property: "Empresa",
-              relation: { contains: companyId },
-            },
-            {
-              or: [
-                {
-                  property: "Rede Social",
-                  multi_select: { contains: "Instagram" },
-                },
-                {
-                  and: [
-                    {
-                      property: "Tipo/Formato",
-                      select: { equals: "Stories" },
-                    },
-                    {
-                      property: "Status",
-                      status: { equals: "Publicado" },
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
+        filter: { and: filters },
         sorts: [
           {
             property: "Data de Publicação",
@@ -149,6 +145,23 @@ async function queryDataSource(
   }
 
   return payload as DataSourceQueryResponse;
+}
+
+async function queryAllPages(
+  profile: ProfileKey,
+  onlyPublishedStories: boolean
+): Promise<NotionPage[]> {
+  const pages: NotionPage[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const result = await queryDataSource(profile, onlyPublishedStories, cursor);
+    pages.push(...result.results);
+    cursor =
+      result.has_more && result.next_cursor ? result.next_cursor : undefined;
+  } while (cursor && pages.length < 10_000);
+
+  return pages;
 }
 
 function richTextToString(items?: RichTextItem[]): string {
@@ -380,14 +393,17 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function fetchPosts(profile: ProfileKey = "mr"): Promise<NotionPost[]> {
-  const pages: NotionPage[] = [];
-  let cursor: string | undefined;
+  const [instagramPages, publishedStoryPages] = await Promise.all([
+    queryAllPages(profile, false),
+    queryAllPages(profile, true),
+  ]);
 
-  do {
-    const page = await queryDataSource(profile, cursor);
-    pages.push(...page.results);
-    cursor = page.has_more && page.next_cursor ? page.next_cursor : undefined;
-  } while (cursor && pages.length < 10_000);
+  // Some published Story entries do not have Instagram selected in Rede Social.
+  // Merge the two result sets by page id so each Story appears only once.
+  const pageMap = new Map<string, NotionPage>();
+  for (const page of instagramPages) pageMap.set(page.id, page);
+  for (const page of publishedStoryPages) pageMap.set(page.id, page);
+  const pages = Array.from(pageMap.values());
 
   const token = getToken();
   const posts = await mapWithConcurrency(pages, 3, async (item) => {
