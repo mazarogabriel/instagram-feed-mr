@@ -458,23 +458,16 @@ export async function fetchPostDetails(
   }
 
   const token = getToken();
-  const pageResponse = await fetch(NOTION_API_BASE + "/pages/" + pageId, {
-    headers: notionHeaders(token),
-    cache: "no-store",
-  });
 
-  if (!pageResponse.ok) {
-    throw new Error("Não foi possível localizar a publicação no Notion.");
-  }
-
-  const page = (await pageResponse.json()) as NotionPage;
-  const companyId = PROFILE_COMPANY_IDS[profile];
-  const normalizeId = (value: string) => value.replace(/-/g, "").toLowerCase();
-  const belongsToProfile = (page.properties["Empresa"]?.relation ?? []).some(
-    (relation) => normalizeId(relation.id) === normalizeId(companyId)
+  // Validate against the same company-scoped data-source query used by the
+  // feed. The individual Notion page endpoint can return relation properties
+  // in a partial form, even when the data-source query has the relation.
+  const page = (await fetchCompanyPages(profile)).find(
+    (candidate) => candidate.id.replace(/-/g, "").toLowerCase() ===
+      pageId.replace(/-/g, "").toLowerCase()
   );
 
-  if (!belongsToProfile) {
+  if (!page) {
     throw new Error("Esta publicação não pertence ao perfil selecionado.");
   }
 
