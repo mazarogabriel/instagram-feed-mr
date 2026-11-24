@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
@@ -60,27 +59,26 @@ export default function PostDetailModal({
         aria-label={"Publicação: " + post.title}
         className="relative flex max-h-[92vh] w-full max-w-[850px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row"
       >
-        <div className="relative flex max-h-[48vh] min-h-[220px] w-full flex-shrink-0 items-center justify-center bg-[#111] sm:max-h-none sm:min-h-[560px] sm:w-[48%]">
+        <div className="relative flex w-full flex-shrink-0 self-start items-center justify-center bg-[#f4f3f0] sm:w-[48%]">
           {currentMedia?.kind === "video" ? (
             <video
               key={currentMedia.url}
               src={currentMedia.url}
               controls
               playsInline
-              className="h-full max-h-[48vh] w-full object-contain sm:max-h-[92vh]"
+              className="block h-auto w-auto max-h-[48vh] max-w-full object-contain sm:max-h-[92vh]"
             />
           ) : currentMedia?.url ? (
-            <Image
+            <img
               key={currentMedia.url}
               src={currentMedia.url}
               alt={post.title}
-              fill
-              className="object-contain"
-              unoptimized
-              sizes="(max-width: 640px) 100vw, 420px"
+              loading="eager"
+              decoding="async"
+              className="block h-auto w-auto max-h-[48vh] max-w-full object-contain sm:max-h-[92vh]"
             />
           ) : (
-            <div className="flex h-full min-h-[220px] items-center justify-center p-8 text-center text-sm text-white/70">
+            <div className="flex min-h-[220px] w-full items-center justify-center p-8 text-center text-sm text-[#77736d]">
               Nenhuma imagem ou vídeo cadastrado
             </div>
           )}
