@@ -287,7 +287,7 @@ export default function PostDetailModal({
               (isReel && !detailsExpanded ? "hidden sm:block" : "")
             }
           >
-            <div className={"mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] " + (isReel ? "text-white/75 sm:text-[#77736d]" : "text-[#77736d]")}>
+            <div className={"mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] " + "text-[#77736d]"}>
               {post.publishDate && (
                 <span className="inline-flex items-center gap-1.5">
                   <CalendarDays size={13} />
@@ -305,10 +305,10 @@ export default function PostDetailModal({
                 </span>
               )}
             </div>
-            <h3 className={"mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] " + (isReel ? "text-white/70 sm:text-[#8e8e8e]" : "text-[#8e8e8e]")}>
+            <h3 className={"mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] " + "text-[#8e8e8e]"}>
               Legenda
             </h3>
-            <p className={"whitespace-pre-wrap text-[13px] leading-[1.75] " + (isReel ? "text-white sm:text-[#262626]" : "text-[#262626]")}>
+            <p className={"whitespace-pre-wrap text-[13px] leading-[1.75] " + "text-[#262626]"}>
               {post.caption || "A legenda ainda não foi preenchida nesta publicação."}
             </p>
           </div>
