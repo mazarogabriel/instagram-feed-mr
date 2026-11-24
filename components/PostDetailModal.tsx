@@ -96,7 +96,7 @@ export default function PostDetailModal({
           className={
             "relative flex w-full flex-shrink-0 items-center justify-center overflow-hidden " +
             (isReel
-              ? "h-[calc(100dvh-104px)] max-h-[calc(100dvh-104px)] bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
+              ? "h-[calc(100dvh-116px)] max-h-[calc(100dvh-116px)] bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
               : "max-h-[55vh] self-start overflow-y-auto bg-white sm:h-[92vh] sm:max-h-none sm:w-[48%] sm:overflow-hidden sm:bg-[#111]")
           }
         >
@@ -203,7 +203,7 @@ export default function PostDetailModal({
             (isReel
               ? detailsExpanded
                 ? "absolute inset-x-0 bottom-0 h-[68dvh] max-h-[68dvh] overflow-hidden bg-white text-[#262626] shadow-[0_-12px_40px_rgba(0,0,0,0.28)] sm:relative sm:inset-auto sm:h-auto sm:max-h-none sm:flex-1 sm:bg-white sm:shadow-none"
-                : "relative h-[104px] max-h-[104px] flex-shrink-0 overflow-hidden bg-white text-[#262626] sm:relative sm:inset-auto sm:h-auto sm:max-h-none sm:flex-1 sm:bg-white"
+                : "relative h-[116px] max-h-[116px] flex-shrink-0 overflow-hidden bg-white text-[#262626] sm:relative sm:inset-auto sm:h-auto sm:max-h-none sm:flex-1 sm:bg-white"
               : "flex-1")
           }
         >
@@ -317,7 +317,7 @@ export default function PostDetailModal({
             className={
               "border-t px-5 py-3 " +
               (isReel
-                ? "border-[#efefef] " + (!detailsExpanded ? "hidden sm:block" : "")
+                ? "border-[#efefef] " + (!detailsExpanded ? "px-5 py-1.5 sm:px-5 sm:py-3" : "px-5 py-3")
                 : "border-[#efefef]")
             }
           >
@@ -325,7 +325,10 @@ export default function PostDetailModal({
               href={post.pageUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className={"inline-flex items-center gap-1.5 text-[12px] font-medium hover:underline " + (isReel ? "text-white sm:text-[#262626]" : "text-[#262626]")}
+              className={
+                "inline-flex items-center gap-1.5 font-medium text-[#77736d] hover:text-[#262626] hover:underline " +
+                (isReel ? "text-[10px] sm:text-[12px]" : "text-[12px]")
+              }
             >
               Abrir no Notion <ExternalLink size={12} />
             </a>
