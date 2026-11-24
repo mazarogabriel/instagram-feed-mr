@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchPosts } from "@/lib/notion";
+import { fetchPosts, type ProfileKey } from "@/lib/notion";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,11 +11,16 @@ const noCacheHeaders = {
   Expires: "0",
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const posts = await fetchPosts();
+    const url = new URL(request.url);
+    const requestedProfile = url.searchParams.get("profile");
+    const profile: ProfileKey = requestedProfile === "lab" ? "lab" : "mr";
+    const posts = await fetchPosts(profile);
+
     return NextResponse.json(
       {
+        profile,
         posts,
         refreshedAt: new Date().toISOString(),
       },

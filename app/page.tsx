@@ -11,7 +11,7 @@ function getProfile(): Profile {
     displayName: process.env.NEXT_PUBLIC_PROFILE_DISPLAY_NAME ?? "Melina Romano Studio",
     bio: process.env.NEXT_PUBLIC_PROFILE_BIO ?? "Arquitetura, interiores, design e arte.",
     website: process.env.NEXT_PUBLIC_PROFILE_WEBSITE ?? "",
-    avatarUrl: process.env.NEXT_PUBLIC_PROFILE_AVATAR_URL ?? "",
+    avatarUrl: process.env.NEXT_PUBLIC_PROFILE_AVATAR_URL ?? "/mr-profile.jpg",
   };
 }
 
@@ -32,7 +32,7 @@ export default async function HomePage() {
   let initialError: string | undefined;
 
   try {
-    initialPosts = await fetchPosts();
+    initialPosts = await fetchPosts("mr");
   } catch (error) {
     initialError = error instanceof Error
       ? error.message
@@ -40,7 +40,7 @@ export default async function HomePage() {
   }
 
   return (
-    <main className="min-h-screen w-full bg-[#f3f2ef] px-3 py-4 sm:px-6 sm:py-8 flex justify-center">
+    <main className="flex min-h-screen w-full justify-center bg-[#f3f2ef] px-3 py-4 sm:px-6 sm:py-8">
       <InstagramWidget
         initialPosts={initialPosts}
         profile={profile}

@@ -12,7 +12,7 @@ export interface NotionPost {
   publishDate: string | null;
   status: string | null;
   format: string | null;
-  storyMedia: StoryMedia[];
+  media: StoryMedia[];
 }
 
 export interface Profile {

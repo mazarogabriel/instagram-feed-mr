@@ -26,8 +26,8 @@ export default function StoryViewer({
 }: StoryViewerProps) {
   const slides = useMemo<StorySlide[]>(() => {
     return posts.flatMap((post) => {
-      const assets = post.storyMedia?.length
-        ? post.storyMedia
+      const assets = post.media?.length
+        ? post.media
         : post.thumbnail
           ? [{ url: post.thumbnail, kind: "image" as const }]
           : [null];
@@ -135,7 +135,7 @@ export default function StoryViewer({
         <div className="absolute inset-x-4 top-8 z-20 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-2 text-white">
             <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-white/15 text-xs font-semibold">
-              M
+              {username.slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0">
               <p className="truncate text-[12px] font-semibold">{username}</p>

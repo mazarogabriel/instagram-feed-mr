@@ -1,7 +1,14 @@
 import type { NotionPost, StoryMedia } from "./types";
 
+export type ProfileKey = "mr" | "lab";
+
 const NOTION_API_VERSION = "2026-03-11";
 const NOTION_API_BASE = "https://api.notion.com/v1";
+
+const PROFILE_COMPANY_IDS: Record<ProfileKey, string> = {
+  mr: "c444a082-c32a-8350-adfc-0110adbf4fa7",
+  lab: "9014a082-c32a-832b-9abf-814a184c2594",
+};
 
 type RichTextItem = {
   plain_text?: string;
@@ -56,9 +63,6 @@ type PageBodyData = {
 const DATA_SOURCE_ID =
   process.env.NOTION_DATA_SOURCE_ID ?? "c394a082-c32a-8389-8345-077f489e674f";
 
-const MR_COMPANY_PAGE_ID =
-  process.env.NOTION_COMPANY_PAGE_ID ?? "c444a082-c32a-8350-adfc-0110adbf4fa7";
-
 function getToken(): string {
   const token = process.env.NOTION_TOKEN;
   if (!token) {
@@ -76,8 +80,11 @@ function notionHeaders(token: string): HeadersInit {
 }
 
 async function queryDataSource(
+  profile: ProfileKey,
   startCursor?: string
 ): Promise<DataSourceQueryResponse> {
+  const companyId = PROFILE_COMPANY_IDS[profile];
+
   const response = await fetch(
     NOTION_API_BASE + "/data_sources/" + DATA_SOURCE_ID + "/query",
     {
@@ -87,36 +94,29 @@ async function queryDataSource(
         result_type: "page",
         page_size: 100,
         ...(startCursor ? { start_cursor: startCursor } : {}),
-        // Ordinary Instagram posts need the Instagram network tag.
-        // Published Stories are also included by format/status, because some
-        // Story entries in this workspace do not have Rede Social filled in.
         filter: {
-          or: [
+          and: [
             {
-              and: [
+              property: "Empresa",
+              relation: { contains: companyId },
+            },
+            {
+              or: [
                 {
                   property: "Rede Social",
                   multi_select: { contains: "Instagram" },
                 },
                 {
-                  property: "Empresa",
-                  relation: { contains: MR_COMPANY_PAGE_ID },
-                },
-              ],
-            },
-            {
-              and: [
-                {
-                  property: "Tipo/Formato",
-                  select: { equals: "Stories" },
-                },
-                {
-                  property: "Status",
-                  status: { equals: "Publicado" },
-                },
-                {
-                  property: "Empresa",
-                  relation: { contains: MR_COMPANY_PAGE_ID },
+                  and: [
+                    {
+                      property: "Tipo/Formato",
+                      select: { equals: "Stories" },
+                    },
+                    {
+                      property: "Status",
+                      status: { equals: "Publicado" },
+                    },
+                  ],
                 },
               ],
             },
@@ -139,13 +139,12 @@ async function queryDataSource(
 
   if (!response.ok) {
     const errorPayload = payload as { message?: string; code?: string };
-    const detail = errorPayload.message ?? "Erro desconhecido";
     throw new Error(
       "Notion API (" +
         response.status +
         (errorPayload.code ? ", " + errorPayload.code : "") +
         "): " +
-        detail
+        (errorPayload.message ?? "Erro desconhecido")
     );
   }
 
@@ -168,7 +167,6 @@ function normalizeLineBreaks(value: string): string {
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/&lt;br\s*\/?&gt;/gi, "\n")
     .replace(/<\/p\s*>/gi, "\n\n")
     .replace(/<p[^>]*>/gi, "")
     .replace(/<[^>]+>/g, "")
@@ -186,7 +184,6 @@ function cleanCaption(value: string): string | null {
   let caption = normalizeLineBreaks(value)
     .replace(/^Legenda\s*:?\s*/i, "")
     .replace(/[ \t]*ᴾᵀ⁻ᴱᴺᴳ[ \t]*/g, "")
-    .replace(/\n{3,}/g, "\n\n")
     .trim();
 
   const editorialBoundary =
@@ -235,17 +232,12 @@ function extractPropertyMedia(
     if (!url) return [];
 
     const mimeType = file.type === "file" ? file.file?.mime_type ?? "" : "";
-    return [
-      {
-        url,
-        kind: inferMediaKind(url, file.name ?? "", mimeType),
-      },
-    ];
+    return [{ url, kind: inferMediaKind(url, file.name ?? "", mimeType) }];
   });
 }
 
 function mediaFromBlock(block: NotionBlock): StoryMedia | null {
-  if (!["image", "video", "file", "pdf"].includes(block.type)) return null;
+  if (!["image", "video", "file"].includes(block.type)) return null;
 
   const content = block[block.type] as
     | {
@@ -352,7 +344,7 @@ function extractCaptionFromBody(textBlocks: string[]): string | null {
   const body = normalizeLineBreaks(textBlocks.join("\n\n"));
   if (!body) return null;
 
-  const explicitMarker = /(?:^|\n)\s*Legenda\s*:?\s*/i.exec(body);
+  const explicitMarker = /(?:^|\n)\s*Legenda(?: principal)?\s*:?\s*/i.exec(body);
   if (explicitMarker) {
     return cleanCaption(body.slice(explicitMarker.index + explicitMarker[0].length));
   }
@@ -387,12 +379,12 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export async function fetchPosts(): Promise<NotionPost[]> {
+export async function fetchPosts(profile: ProfileKey = "mr"): Promise<NotionPost[]> {
   const pages: NotionPage[] = [];
   let cursor: string | undefined;
 
   do {
-    const page = await queryDataSource(cursor);
+    const page = await queryDataSource(profile, cursor);
     pages.push(...page.results);
     cursor = page.has_more && page.next_cursor ? page.next_cursor : undefined;
   } while (cursor && pages.length < 10_000);
@@ -403,38 +395,35 @@ export async function fetchPosts(): Promise<NotionPost[]> {
     let caption = cleanCaption(
       richTextToString(item.properties["Legenda (texto)"]?.rich_text)
     );
-    let bodyMedia: StoryMedia[] = [];
-    const format = item.properties["Tipo/Formato"]?.select?.name ?? null;
 
-    // Story pages can contain several image/video blocks. Read the whole body
-    // for Stories even when a thumbnail is already present in a property.
-    if (format === "Stories" || !caption || propertyMedia.length === 0) {
-      try {
-        const body = await getPageBodyData(item.id, token);
-        bodyMedia = body.media;
-        caption ??= extractCaptionFromBody(body.textBlocks);
-      } catch {
-        // Keep values already read from database properties.
-      }
+    // Read the complete page body for every format. Reels, videos and
+    // carousels often store their media as separate blocks or inside columns.
+    let body: PageBodyData = { media: [], textBlocks: [] };
+    try {
+      body = await getPageBodyData(item.id, token);
+      caption ??= extractCaptionFromBody(body.textBlocks);
+    } catch {
+      // Preserve the media and caption already available from properties.
     }
 
-    const allMedia = [...propertyMedia, ...bodyMedia].filter(
+    const media = [...propertyMedia, ...body.media].filter(
       (asset, index, array) =>
         array.findIndex((candidate) => candidate.url === asset.url) === index
     );
-    const thumbnail =
-      allMedia.find((asset) => asset.kind === "image")?.url ?? null;
 
     return {
       id: item.id,
       title: extractTitle(item.properties),
-      thumbnail,
+      thumbnail:
+        media.find((asset) => asset.kind === "image")?.url ??
+        media[0]?.url ??
+        null,
       caption,
       pageUrl: item.url ?? "https://www.notion.so/" + item.id.replace(/-/g, ""),
       publishDate: item.properties["Data de Publicação"]?.date?.start ?? null,
       status: item.properties["Status"]?.status?.name ?? null,
-      format,
-      storyMedia: format === "Stories" ? allMedia : [],
+      format: item.properties["Tipo/Formato"]?.select?.name ?? null,
+      media,
     };
   });
 

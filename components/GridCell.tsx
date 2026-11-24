@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { cn, formatDate } from "@/lib/utils";
 import type { NotionPost } from "@/lib/types";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Play, Copy } from "lucide-react";
 
 interface GridCellProps {
   post: NotionPost;
@@ -25,12 +25,14 @@ export default function GridCell({ post, onClick }: GridCellProps) {
   const [hover, setHover] = useState(false);
   const [imgError, setImgError] = useState(false);
   const statusColor = post.status ? STATUS_COLORS[post.status] ?? "bg-gray-400" : null;
+  const hasVideo = post.media?.some((asset) => asset.kind === "video") ?? false;
+  const mediaCount = post.media?.length ?? 0;
 
   return (
     <button
       type="button"
       aria-label={"Abrir publicação: " + post.title}
-      className="relative block w-full cursor-pointer select-none text-left group"
+      className="group relative block w-full cursor-pointer select-none text-left"
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -66,20 +68,29 @@ export default function GridCell({ post, onClick }: GridCellProps) {
             {post.title}
           </p>
           <span className="mt-1 text-[9px] uppercase tracking-[0.12em] text-white/80">
-            Ver legenda
+            Ver publicação
           </span>
         </div>
       </div>
 
-      {statusColor && (
-        <div
-          className={cn(
-            "absolute right-1.5 top-1.5 h-2 w-2 rounded-full border border-white/80",
-            statusColor
-          )}
-          title={post.status ?? ""}
-        />
-      )}
+      <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+        {mediaCount > 1 && (
+          <span className="rounded bg-black/45 p-1 text-white" title={mediaCount + " mídias"}>
+            <Copy size={12} />
+          </span>
+        )}
+        {hasVideo && (
+          <span className="rounded bg-black/45 p-1 text-white" title="Contém vídeo">
+            <Play size={12} fill="currentColor" />
+          </span>
+        )}
+        {statusColor && (
+          <span
+            className={cn("h-2 w-2 rounded-full border border-white/80", statusColor)}
+            title={post.status ?? ""}
+          />
+        )}
+      </div>
     </button>
   );
 }

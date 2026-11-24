@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import Image from "next/image";
 import type { NotionPost, Profile, Highlight, WidgetSettings } from "@/lib/types";
+import type { ProfileKey } from "@/lib/notion";
 import { sortPosts } from "@/lib/utils";
 import ProfileHeader from "./ProfileHeader";
 import Highlights from "./Highlights";
@@ -21,6 +23,12 @@ interface InstagramWidgetProps {
   initialError?: string;
 }
 
+interface ProfileConfig {
+  name: string;
+  profile: Profile;
+  logo: string;
+}
+
 const DEFAULT_SETTINGS: WidgetSettings = {
   showBio: true,
   showHighlights: true,
@@ -34,6 +42,31 @@ export default function InstagramWidget({
   highlights,
   initialError,
 }: InstagramWidgetProps) {
+  const profileConfigs: Record<ProfileKey, ProfileConfig> = {
+    mr: {
+      name: "Melina Romano",
+      logo: "/mr-profile.jpg",
+      profile: {
+        ...profile,
+        displayName: "Melina Romano Studio",
+        username: "mr.melinaromano",
+        avatarUrl: "/mr-profile.jpg",
+      },
+    },
+    lab: {
+      name: "LAB MR",
+      logo: "/lab-mr-profile.jpg",
+      profile: {
+        username: "",
+        displayName: "LAB MR",
+        bio: "Arte, design e pesquisa.",
+        website: "",
+        avatarUrl: "/lab-mr-profile.jpg",
+      },
+    },
+  };
+
+  const [activeProfile, setActiveProfile] = useState<ProfileKey>("mr");
   const [posts, setPosts] = useState<NotionPost[]>(initialPosts);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(initialError);
@@ -43,6 +76,7 @@ export default function InstagramWidget({
   const [selectedPost, setSelectedPost] = useState<NotionPost | null>(null);
   const [storiesOpen, setStoriesOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const requestSequence = useRef(0);
 
   useEffect(() => {
     try {
@@ -81,18 +115,22 @@ export default function InstagramWidget({
     }
   }, [showPublished, showCompleted]);
 
-  const refresh = useCallback(async () => {
+  const loadPosts = useCallback(async (profileKey: ProfileKey) => {
+    const requestId = ++requestSequence.current;
     setLoading(true);
     setError(undefined);
 
     try {
-      const response = await fetch("/api/posts?refresh=" + Date.now(), {
-        cache: "no-store",
-        headers: {
-          "Cache-Control": "no-cache, no-store",
-          Pragma: "no-cache",
-        },
-      });
+      const response = await fetch(
+        "/api/posts?profile=" + profileKey + "&refresh=" + Date.now(),
+        {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store",
+            Pragma: "no-cache",
+          },
+        }
+      );
       const data = await response.json();
 
       if (!response.ok) {
@@ -102,17 +140,36 @@ export default function InstagramWidget({
         throw new Error("A resposta do Notion não trouxe uma lista de publicações.");
       }
 
-      // Replace the array reference so every view (grid, map and Stories)
-      // recalculates from the same fresh Notion response.
-      setPosts([...data.posts]);
-      setLastUpdated(new Date());
+      if (requestId === requestSequence.current) {
+        setPosts([...data.posts]);
+        setLastUpdated(new Date());
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro desconhecido.");
+      if (requestId === requestSequence.current) {
+        setError(e instanceof Error ? e.message : "Erro desconhecido.");
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
+  const refresh = useCallback(() => {
+    void loadPosts(activeProfile);
+  }, [activeProfile, loadPosts]);
+
+  const switchProfile = (profileKey: ProfileKey) => {
+    if (profileKey === activeProfile) return;
+    setActiveProfile(profileKey);
+    setPosts([]);
+    setSelectedPost(null);
+    setStoriesOpen(false);
+    void loadPosts(profileKey);
+  };
+
+  const activeConfig = profileConfigs[activeProfile];
+  const activeProfileData = activeConfig.profile;
   const sortedPosts = sortPosts(posts);
   const feedPosts = sortedPosts.filter((post) => post.format !== "Stories");
 
@@ -122,8 +179,6 @@ export default function InstagramWidget({
     return false;
   });
 
-  // Only published Stories are grouped behind the profile-photo story ring.
-  // Completed Stories stay out of both the ring and the normal post grid.
   const publishedStories = sortedPosts
     .filter((post) => post.format === "Stories" && post.status === "Publicado")
     .sort((a, b) => {
@@ -135,26 +190,54 @@ export default function InstagramWidget({
 
   const publishedCount = feedPosts.filter((post) => post.status === "Publicado").length;
   const completedCount = feedPosts.filter((post) => post.status === "Concluído").length;
+
   const [activeTab, setActiveTab] = useState<"grid" | "map">("grid");
 
   return (
     <div className="w-full max-w-[430px] min-h-[780px] overflow-hidden rounded-[28px] border border-[#e8e6e2] bg-white shadow-[0_18px_55px_rgba(28,25,20,0.10)]">
-      <div className="flex items-center justify-center border-b border-[#efefef] bg-white px-4 py-3">
-        <span className="text-[13px] font-semibold uppercase tracking-[0.16em] text-[#262626]">
-          Melina Romano
-        </span>
+      <div className="flex items-center justify-center border-b border-[#efefef] bg-white px-3 py-3">
+        <div className="inline-flex rounded-full bg-[#f4f4f4] p-1">
+          {(["mr", "lab"] as ProfileKey[]).map((profileKey) => {
+            const config = profileConfigs[profileKey];
+            const active = activeProfile === profileKey;
+            return (
+              <button
+                key={profileKey}
+                type="button"
+                onClick={() => switchProfile(profileKey)}
+                aria-pressed={active}
+                className={
+                  "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors " +
+                  (active
+                    ? "bg-white text-[#262626] shadow-sm"
+                    : "text-[#777] hover:text-[#262626]")
+                }
+              >
+                <Image
+                  src={config.logo}
+                  alt=""
+                  width={22}
+                  height={22}
+                  className="h-[22px] w-[22px] rounded-full bg-white object-contain"
+                  unoptimized
+                />
+                <span>{config.name}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {settings.showBio && (
         <ProfileHeader
-          profile={profile}
+          profile={activeProfileData}
           postCount={visiblePosts.length}
           storyCount={publishedStories.length}
           onOpenStories={() => setStoriesOpen(true)}
         />
       )}
 
-      {settings.showHighlights && highlights.length > 0 && (
+      {settings.showHighlights && activeProfile === "mr" && highlights.length > 0 && (
         <div className="border-b border-[#dbdbdb] py-3">
           <Highlights highlights={highlights} />
         </div>
@@ -237,13 +320,19 @@ export default function InstagramWidget({
       </div>
 
       {selectedPost && (
-        <PostDetailModal post={selectedPost} onClose={() => setSelectedPost(null)} />
+        <PostDetailModal
+          post={selectedPost}
+          profileName={activeProfileData.displayName}
+          onClose={() => setSelectedPost(null)}
+        />
       )}
 
       {storiesOpen && (
         <StoryViewer
           posts={publishedStories}
-          username={"@" + profile.username}
+          username={activeProfileData.username
+            ? "@" + activeProfileData.username
+            : activeProfileData.displayName}
           onClose={() => setStoriesOpen(false)}
         />
       )}

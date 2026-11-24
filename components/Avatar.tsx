@@ -42,7 +42,7 @@ export default function Avatar({
             alt={alt}
             width={size}
             height={size}
-            className="h-full w-full rounded-full object-cover"
+            className="h-full w-full rounded-full bg-white object-contain"
             onError={() => setError(true)}
             unoptimized
           />
