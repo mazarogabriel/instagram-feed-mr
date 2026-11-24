@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { X, ExternalLink } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
@@ -227,7 +227,7 @@ export default function StoryViewer({
           className="absolute inset-y-24 right-0 z-10 w-1/2 cursor-pointer"
         />
 
-        <div className="absolute inset-x-4 bottom-5 z-20 text-white">
+        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+58px)] z-20 text-white">
           <p className="text-[13px] font-semibold drop-shadow">
             {current.post.title}
           </p>
@@ -236,6 +236,20 @@ export default function StoryViewer({
               {current.post.caption}
             </p>
           )}
+        </div>
+
+        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-30 flex justify-end">
+          <a
+            href={current.post.pageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Abrir Story no Notion"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex items-center gap-1.5 rounded-full bg-black/30 px-2.5 py-1.5 text-[10px] font-medium text-white/85 backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white"
+          >
+            Abrir no Notion <ExternalLink size={11} />
+          </a>
         </div>
       </div>
     </div>
