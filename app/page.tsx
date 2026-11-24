@@ -1,4 +1,4 @@
-import { fetchPosts } from "@/lib/notion";
+import { fetchPostsSnapshot } from "@/lib/notion";
 import type { Profile, Highlight, NotionPost } from "@/lib/types";
 import InstagramWidget from "@/components/InstagramWidget";
 
@@ -29,10 +29,13 @@ export default async function HomePage() {
   const profile = getProfile();
   const highlights = getHighlights();
   let initialPosts: NotionPost[] = [];
+  let initialRevision = "";
   let initialError: string | undefined;
 
   try {
-    initialPosts = await fetchPosts("mr");
+    const snapshot = await fetchPostsSnapshot("mr");
+    initialPosts = snapshot.posts;
+    initialRevision = snapshot.revision;
   } catch (error) {
     initialError = error instanceof Error
       ? error.message
@@ -43,6 +46,7 @@ export default async function HomePage() {
     <main className="flex min-h-screen w-full justify-center bg-[#f3f2ef] px-3 py-4 sm:px-6 sm:py-8">
       <InstagramWidget
         initialPosts={initialPosts}
+        initialRevision={initialRevision}
         profile={profile}
         highlights={highlights}
         initialError={initialError}
