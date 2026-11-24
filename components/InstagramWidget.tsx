@@ -87,6 +87,9 @@ export default function InstagramWidget({
   const [showPublished, setShowPublished] = useState(true);
   const [showCompleted, setShowCompleted] = useState(true);
   const [selectedPost, setSelectedPost] = useState<NotionPost | null>(null);
+  const [selectedPostLoading, setSelectedPostLoading] = useState(false);
+  const [selectedPostError, setSelectedPostError] = useState<string | undefined>();
+  const postDetailRequestSequence = useRef(0);
   const [storiesOpen, setStoriesOpen] = useState(false);
   const [lastUpdatedByProfile, setLastUpdatedByProfile] = useState<Record<ProfileKey, Date | null>>({
     mr: initialProfiles.mr.error ? null : new Date(),
@@ -250,7 +253,10 @@ export default function InstagramWidget({
   const switchProfile = (profileKey: ProfileKey) => {
     if (profileKey === activeProfile) return;
     setActiveProfile(profileKey);
+    postDetailRequestSequence.current += 1;
     setSelectedPost(null);
+    setSelectedPostLoading(false);
+    setSelectedPostError(undefined);
     setStoriesOpen(false);
 
     // Profiles are already loaded into memory. Retry only when the initial
@@ -258,6 +264,64 @@ export default function InstagramWidget({
     if (errorsByProfile[profileKey]) {
       void loadPosts(profileKey);
     }
+  };
+
+  const openPost = (post: NotionPost) => {
+    const requestId = ++postDetailRequestSequence.current;
+    const profileKey = activeProfile;
+
+    setSelectedPost(post);
+    setSelectedPostLoading(true);
+    setSelectedPostError(undefined);
+
+    void (async () => {
+      try {
+        const response = await fetch(
+          "/api/posts/" + post.id + "/media?profile=" + profileKey,
+          {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache, no-store",
+              Pragma: "no-cache",
+            },
+          }
+        );
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "Não foi possível carregar as mídias.");
+        }
+
+        if (
+          requestId === postDetailRequestSequence.current &&
+          Array.isArray(data.media)
+        ) {
+          setSelectedPost((current) =>
+            current?.id === post.id
+              ? {
+                  ...current,
+                  media: data.media,
+                  thumbnail:
+                    data.media.find((asset: { kind: string; url: string }) => asset.kind === "image")?.url ??
+                    data.media[0]?.url ??
+                    current.thumbnail,
+                  caption: data.caption ?? current.caption,
+                }
+              : current
+          );
+        }
+      } catch (error) {
+        if (requestId === postDetailRequestSequence.current) {
+          setSelectedPostError(
+            error instanceof Error ? error.message : "Erro ao carregar as mídias."
+          );
+        }
+      } finally {
+        if (requestId === postDetailRequestSequence.current) {
+          setSelectedPostLoading(false);
+        }
+      }
+    })();
   };
 
   const activeConfig = profileConfigs[activeProfile];
@@ -406,7 +470,7 @@ export default function InstagramWidget({
       {loading && posts.length === 0 ? (
         <LoadingSkeleton />
       ) : activeTab === "grid" ? (
-        <InstagramGrid posts={visiblePosts} onSelectPost={setSelectedPost} />
+        <InstagramGrid posts={visiblePosts} onSelectPost={openPost} />
       ) : (
         <ContentMap posts={visiblePosts} />
       )}
@@ -429,7 +493,14 @@ export default function InstagramWidget({
         <PostDetailModal
           post={selectedPost}
           profileName={activeProfileData.displayName}
-          onClose={() => setSelectedPost(null)}
+          loadingMedia={selectedPostLoading}
+          mediaError={selectedPostError}
+          onClose={() => {
+            postDetailRequestSequence.current += 1;
+            setSelectedPost(null);
+            setSelectedPostLoading(false);
+            setSelectedPostError(undefined);
+          }}
         />
       )}
 
