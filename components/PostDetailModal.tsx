@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
@@ -25,25 +25,63 @@ export default function PostDetailModal({
   }, [post]);
 
   const [activeIndex, setActiveIndex] = useState(0);
-  const currentMedia = media[activeIndex];
+  const mediaTrackRef = useRef<HTMLDivElement>(null);
+
+  const goToMedia = (index: number) => {
+    const safeIndex = Math.max(0, Math.min(media.length - 1, index));
+    mediaTrackRef.current?.scrollTo({
+      left: safeIndex * (mediaTrackRef.current?.clientWidth ?? 0),
+      behavior: "smooth",
+    });
+    setActiveIndex(safeIndex);
+  };
+
+  const handleMediaScroll = () => {
+    const track = mediaTrackRef.current;
+    if (!track || !track.clientWidth) return;
+    const nextIndex = Math.round(track.scrollLeft / track.clientWidth);
+    setActiveIndex(Math.max(0, Math.min(media.length - 1, nextIndex)));
+  };
 
   useEffect(() => {
     setActiveIndex(0);
+    mediaTrackRef.current?.scrollTo({ left: 0, behavior: "instant" });
   }, [post.id]);
+
+  // Start downloading every carousel image as soon as the publication opens.
+  // These requests populate the browser cache before the user swipes to them.
+  useEffect(() => {
+    const preloadedImages: HTMLImageElement[] = [];
+
+    media.forEach((item) => {
+      if (item.kind !== "image") return;
+      const image = new window.Image();
+      image.decoding = "async";
+      image.src = item.url;
+      preloadedImages.push(image);
+    });
+
+    return () => {
+      preloadedImages.forEach((image) => {
+        image.onload = null;
+        image.onerror = null;
+      });
+    };
+  }, [post.id, media]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
       if (event.key === "ArrowRight") {
-        setActiveIndex((index) => Math.min(media.length - 1, index + 1));
+        goToMedia(activeIndex + 1);
       }
       if (event.key === "ArrowLeft") {
-        setActiveIndex((index) => Math.max(0, index - 1));
+        goToMedia(activeIndex - 1);
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [media.length, onClose]);
+  }, [media.length, onClose, activeIndex]);
 
   return (
     <div
@@ -59,36 +97,52 @@ export default function PostDetailModal({
         aria-label={"Publicação: " + post.title}
         className="relative flex max-h-[92vh] w-full max-w-[850px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row"
       >
-        <div className="relative flex w-full flex-shrink-0 self-start items-center justify-center bg-white sm:h-[92vh] sm:w-[48%] sm:bg-[#111]">
-          {currentMedia?.kind === "video" ? (
-            <video
-              key={currentMedia.url}
-              src={currentMedia.url}
-              controls
-              playsInline
-              className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-h-[92vh]"
-            />
-          ) : currentMedia?.url ? (
-            <img
-              key={currentMedia.url}
-              src={currentMedia.url}
-              alt={post.title}
-              loading="eager"
-              decoding="async"
-              className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-h-[92vh]"
-            />
-          ) : (
-            <div className="flex min-h-[220px] w-full items-center justify-center p-8 text-center text-sm text-[#77736d]">
-              Nenhuma imagem ou vídeo cadastrado
-            </div>
-          )}
+        <div className="relative w-full flex-shrink-0 self-start bg-white sm:h-[92vh] sm:w-[48%] sm:bg-[#111]">
+          <div
+            ref={mediaTrackRef}
+            onScroll={handleMediaScroll}
+            className="flex w-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:h-[92vh]"
+            style={{ touchAction: "pan-x pan-y" }}
+          >
+            {media.length > 0 ? (
+              media.map((item, index) => (
+                <div
+                  key={item.url + "-" + index}
+                  className="flex w-full min-w-full flex-shrink-0 snap-center items-center justify-center sm:h-[92vh]"
+                >
+                  {item.kind === "video" ? (
+                    <video
+                      src={item.url}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-w-full"
+                    />
+                  ) : (
+                    <img
+                      src={item.url}
+                      alt={post.title + " - " + (index + 1)}
+                      loading="eager"
+                      decoding="async"
+                      draggable={false}
+                      className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-w-full"
+                    />
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="flex min-h-[220px] w-full min-w-full items-center justify-center p-8 text-center text-sm text-[#77736d]">
+                Nenhuma imagem ou vídeo cadastrado
+              </div>
+            )}
+          </div>
 
           {media.length > 1 && (
             <>
               <button
                 type="button"
                 aria-label="Mídia anterior"
-                onClick={() => setActiveIndex((index) => Math.max(0, index - 1))}
+                onClick={() => goToMedia(activeIndex - 1)}
                 disabled={activeIndex === 0}
                 className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white disabled:opacity-30"
               >
@@ -97,7 +151,7 @@ export default function PostDetailModal({
               <button
                 type="button"
                 aria-label="Próxima mídia"
-                onClick={() => setActiveIndex((index) => Math.min(media.length - 1, index + 1))}
+                onClick={() => goToMedia(activeIndex + 1)}
                 disabled={activeIndex === media.length - 1}
                 className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white disabled:opacity-30"
               >
