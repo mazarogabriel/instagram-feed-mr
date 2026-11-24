@@ -27,6 +27,8 @@ type NotionProperty = {
   select?: { name?: string } | null;
   date?: { start?: string | null } | null;
   status?: { name?: string } | null;
+  multi_select?: { name?: string }[];
+  relation?: { id: string }[];
 };
 
 type NotionPage = {
@@ -80,47 +82,11 @@ function notionHeaders(token: string): HeadersInit {
   };
 }
 
-type DataSourceQueryMode = "instagram" | "untaggedPublished" | "publishedStories";
-
-async function queryDataSource(
+async function queryCompanyDataSource(
   profile: ProfileKey,
-  mode: DataSourceQueryMode,
   startCursor?: string
 ): Promise<DataSourceQueryResponse> {
   const companyId = PROFILE_COMPANY_IDS[profile];
-  const filters: Record<string, unknown>[] = [
-    {
-      property: "Empresa",
-      relation: { contains: companyId },
-    },
-  ];
-
-  if (mode === "instagram") {
-    filters.push({
-      property: "Rede Social",
-      multi_select: { contains: "Instagram" },
-    });
-  } else if (mode === "untaggedPublished") {
-    // A status change to Published is enough to include an otherwise
-    // Instagram-style post whose Rede Social property has not been filled.
-    filters.push({
-      property: "Rede Social",
-      multi_select: { is_empty: true },
-    });
-    filters.push({
-      property: "Status",
-      status: { equals: "Publicado" },
-    });
-  } else {
-    filters.push({
-      property: "Tipo/Formato",
-      select: { equals: "Stories" },
-    });
-    filters.push({
-      property: "Status",
-      status: { equals: "Publicado" },
-    });
-  }
 
   const response = await fetch(
     NOTION_API_BASE + "/data_sources/" + DATA_SOURCE_ID + "/query",
@@ -131,7 +97,10 @@ async function queryDataSource(
         result_type: "page",
         page_size: 100,
         ...(startCursor ? { start_cursor: startCursor } : {}),
-        filter: { and: filters },
+        filter: {
+          property: "Empresa",
+          relation: { contains: companyId },
+        },
         sorts: [
           {
             property: "Data de Publicação",
@@ -161,21 +130,29 @@ async function queryDataSource(
   return payload as DataSourceQueryResponse;
 }
 
-async function queryAllPages(
-  profile: ProfileKey,
-  mode: DataSourceQueryMode
-): Promise<NotionPage[]> {
+async function fetchCompanyPages(profile: ProfileKey): Promise<NotionPage[]> {
   const pages: NotionPage[] = [];
   let cursor: string | undefined;
 
   do {
-    const result = await queryDataSource(profile, mode, cursor);
+    const result = await queryCompanyDataSource(profile, cursor);
     pages.push(...result.results);
     cursor =
       result.has_more && result.next_cursor ? result.next_cursor : undefined;
   } while (cursor && pages.length < 10_000);
 
-  return pages;
+  // Keep Instagram posts, published Stories and published items whose
+  // Rede Social field has not been filled. All other channels stay excluded.
+  return pages.filter((page) => {
+    const properties = page.properties;
+    const social = properties["Rede Social"]?.multi_select ?? [];
+    const isInstagram = social.some((item) => item.name === "Instagram");
+    const isPublished = properties["Status"]?.status?.name === "Publicado";
+    const isStory = properties["Tipo/Formato"]?.select?.name === "Stories";
+    const isUntagged = social.length === 0;
+
+    return isInstagram || (isPublished && (isStory || isUntagged));
+  });
 }
 
 function richTextToString(items?: RichTextItem[]): string {
@@ -406,23 +383,6 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function fetchProfilePages(profile: ProfileKey): Promise<NotionPage[]> {
-  const [instagramPages, publishedUntaggedPages, publishedStoryPages] =
-    await Promise.all([
-      queryAllPages(profile, "instagram"),
-      queryAllPages(profile, "untaggedPublished"),
-      queryAllPages(profile, "publishedStories"),
-    ]);
-
-  // Merge Instagram posts (including untagged network entries) and published
-  // Stories by page id so each Notion page appears only once.
-  const pageMap = new Map<string, NotionPage>();
-  for (const page of instagramPages) pageMap.set(page.id, page);
-  for (const page of publishedUntaggedPages) pageMap.set(page.id, page);
-  for (const page of publishedStoryPages) pageMap.set(page.id, page);
-  return Array.from(pageMap.values());
-}
-
 function createRevision(pages: NotionPage[]): string {
   return pages
     .map((page) => [
@@ -437,61 +397,92 @@ function createRevision(pages: NotionPage[]): string {
 }
 
 export async function fetchPostsRevision(profile: ProfileKey): Promise<string> {
-  const pages = await fetchProfilePages(profile);
+  const pages = await fetchCompanyPages(profile);
   return createRevision(pages);
+}
+
+function dedupeMedia(media: StoryMedia[]): StoryMedia[] {
+  const seen = new Set<string>();
+  return media.filter((asset) => {
+    if (seen.has(asset.url)) return false;
+    seen.add(asset.url);
+    return true;
+  });
+}
+
+export async function fetchPostDetails(
+  profile: ProfileKey,
+  pageId: string
+): Promise<{ media: StoryMedia[]; caption: string | null }> {
+  if (!/^[0-9a-f-]{32,36}$/i.test(pageId)) {
+    throw new Error("ID de publicação inválido.");
+  }
+
+  const token = getToken();
+  const pageResponse = await fetch(NOTION_API_BASE + "/pages/" + pageId, {
+    headers: notionHeaders(token),
+    cache: "no-store",
+  });
+
+  if (!pageResponse.ok) {
+    throw new Error("Não foi possível localizar a publicação no Notion.");
+  }
+
+  const page = (await pageResponse.json()) as NotionPage;
+  const companyId = PROFILE_COMPANY_IDS[profile];
+  const belongsToProfile = (page.properties["Empresa"]?.relation ?? []).some(
+    (relation) => relation.id === companyId
+  );
+
+  if (!belongsToProfile) {
+    throw new Error("Esta publicação não pertence ao perfil selecionado.");
+  }
+
+  const propertyMedia = extractPropertyMedia(page.properties);
+  const propertyCaption = cleanCaption(
+    richTextToString(page.properties["Legenda (texto)"]?.rich_text)
+  );
+
+  const body = await getPageBodyData(pageId, token);
+  const media = dedupeMedia([...propertyMedia, ...body.media]);
+
+  return {
+    media,
+    caption: propertyCaption ?? extractCaptionFromBody(body.textBlocks),
+  };
 }
 
 export async function fetchPostsSnapshot(
   profile: ProfileKey = "mr"
 ): Promise<{ posts: NotionPost[]; revision: string }> {
-  const pages = await fetchProfilePages(profile);
+  // Feed loading is deliberately lightweight: fetch database properties and
+  // thumbnails only. Full block media is requested only when a post is opened.
+  const pages = await fetchCompanyPages(profile);
   const revision = createRevision(pages);
-  const token = getToken();
-  const posts = await mapWithConcurrency(pages, 3, async (item) => {
+
+  const posts: NotionPost[] = pages.map((item) => {
     const propertyMedia = extractPropertyMedia(item.properties);
-    let caption = cleanCaption(
+    const caption = cleanCaption(
       richTextToString(item.properties["Legenda (texto)"]?.rich_text)
-    );
-
-    // Read the complete page body for every format. Reels, videos and
-    // carousels often store their media as separate blocks or inside columns.
-    let body: PageBodyData = { media: [], textBlocks: [] };
-    try {
-      body = await getPageBodyData(item.id, token);
-      caption ??= extractCaptionFromBody(body.textBlocks);
-    } catch {
-      // Preserve the media and caption already available from properties.
-    }
-
-    const media = [...propertyMedia, ...body.media].filter(
-      (asset, index, array) =>
-        array.findIndex((candidate) => candidate.url === asset.url) === index
     );
 
     return {
       id: item.id,
       title: extractTitle(item.properties),
       thumbnail:
-        media.find((asset) => asset.kind === "image")?.url ??
-        media[0]?.url ??
+        propertyMedia.find((asset) => asset.kind === "image")?.url ??
+        propertyMedia[0]?.url ??
         null,
       caption,
       pageUrl: item.url ?? "https://www.notion.so/" + item.id.replace(/-/g, ""),
       publishDate: item.properties["Data de Publicação"]?.date?.start ?? null,
       status: item.properties["Status"]?.status?.name ?? null,
       format: item.properties["Tipo/Formato"]?.select?.name ?? null,
-      media,
+      media: propertyMedia,
     };
   });
 
-  const sortedPosts = posts.sort((a, b) => {
-    if (!a.publishDate && !b.publishDate) return 0;
-    if (!a.publishDate) return 1;
-    if (!b.publishDate) return -1;
-    return b.publishDate.localeCompare(a.publishDate);
-  });
-
-  return { posts: sortedPosts, revision };
+  return { posts, revision };
 }
 
 export async function fetchPosts(profile: ProfileKey = "mr"): Promise<NotionPost[]> {
