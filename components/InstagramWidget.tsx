@@ -16,12 +16,16 @@ import StatusFilter from "./StatusFilter";
 import PostDetailModal from "./PostDetailModal";
 import StoryViewer from "./StoryViewer";
 
+interface InitialSnapshot {
+  posts: NotionPost[];
+  revision: string;
+  error?: string;
+}
+
 interface InstagramWidgetProps {
-  initialPosts: NotionPost[];
-  initialRevision: string;
+  initialProfiles: Record<ProfileKey, InitialSnapshot>;
   profile: Profile;
   highlights: Highlight[];
-  initialError?: string;
 }
 
 interface ProfileConfig {
@@ -38,11 +42,9 @@ const DEFAULT_SETTINGS: WidgetSettings = {
 };
 
 export default function InstagramWidget({
-  initialPosts,
-  initialRevision,
+  initialProfiles,
   profile,
   highlights,
-  initialError,
 }: InstagramWidgetProps) {
   const profileConfigs: Record<ProfileKey, ProfileConfig> = {
     mr: {
@@ -69,19 +71,32 @@ export default function InstagramWidget({
   };
 
   const [activeProfile, setActiveProfile] = useState<ProfileKey>("mr");
-  const [posts, setPosts] = useState<NotionPost[]>(initialPosts);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | undefined>(initialError);
+  const [postsByProfile, setPostsByProfile] = useState<Record<ProfileKey, NotionPost[]>>({
+    mr: initialProfiles.mr.posts,
+    lab: initialProfiles.lab.posts,
+  });
+  const [loadingByProfile, setLoadingByProfile] = useState<Record<ProfileKey, boolean>>({
+    mr: false,
+    lab: false,
+  });
+  const [errorsByProfile, setErrorsByProfile] = useState<Record<ProfileKey, string | undefined>>({
+    mr: initialProfiles.mr.error,
+    lab: initialProfiles.lab.error,
+  });
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS);
   const [showPublished, setShowPublished] = useState(true);
   const [showCompleted, setShowCompleted] = useState(true);
   const [selectedPost, setSelectedPost] = useState<NotionPost | null>(null);
   const [storiesOpen, setStoriesOpen] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const requestSequence = useRef(0);
-  const currentRevision = useRef(initialRevision);
-  const activeProfileRef = useRef(activeProfile);
-  activeProfileRef.current = activeProfile;
+  const [lastUpdatedByProfile, setLastUpdatedByProfile] = useState<Record<ProfileKey, Date | null>>({
+    mr: initialProfiles.mr.error ? null : new Date(),
+    lab: initialProfiles.lab.error ? null : new Date(),
+  });
+  const requestSequence = useRef<Record<ProfileKey, number>>({ mr: 0, lab: 0 });
+  const currentRevisions = useRef<Record<ProfileKey, string>>({
+    mr: initialProfiles.mr.revision,
+    lab: initialProfiles.lab.revision,
+  });
 
   useEffect(() => {
     try {
@@ -121,10 +136,10 @@ export default function InstagramWidget({
   }, [showPublished, showCompleted]);
 
   const loadPosts = useCallback(async (profileKey: ProfileKey, silent = false) => {
-    const requestId = ++requestSequence.current;
+    const requestId = ++requestSequence.current[profileKey];
     if (!silent) {
-      setLoading(true);
-      setError(undefined);
+      setLoadingByProfile((current) => ({ ...current, [profileKey]: true }));
+      setErrorsByProfile((current) => ({ ...current, [profileKey]: undefined }));
     }
 
     try {
@@ -147,19 +162,24 @@ export default function InstagramWidget({
         throw new Error("A resposta do Notion não trouxe uma lista de publicações.");
       }
 
-      if (requestId === requestSequence.current) {
-        setPosts([...data.posts]);
-        currentRevision.current = data.revision ?? "";
-        setLastUpdated(new Date());
-        if (silent) setError(undefined);
+      if (requestId === requestSequence.current[profileKey]) {
+        setPostsByProfile((current) => ({ ...current, [profileKey]: [...data.posts] }));
+        currentRevisions.current[profileKey] = data.revision ?? "";
+        setLastUpdatedByProfile((current) => ({ ...current, [profileKey]: new Date() }));
+        if (silent) {
+          setErrorsByProfile((current) => ({ ...current, [profileKey]: undefined }));
+        }
       }
     } catch (e) {
-      if (requestId === requestSequence.current && !silent) {
-        setError(e instanceof Error ? e.message : "Erro desconhecido.");
+      if (requestId === requestSequence.current[profileKey] && !silent) {
+        setErrorsByProfile((current) => ({
+          ...current,
+          [profileKey]: e instanceof Error ? e.message : "Erro desconhecido.",
+        }));
       }
     } finally {
-      if (requestId === requestSequence.current && !silent) {
-        setLoading(false);
+      if (requestId === requestSequence.current[profileKey] && !silent) {
+        setLoadingByProfile((current) => ({ ...current, [profileKey]: false }));
       }
     }
   }, []);
@@ -168,19 +188,19 @@ export default function InstagramWidget({
     void loadPosts(activeProfile);
   }, [activeProfile, loadPosts]);
 
-  // Check only page revisions every 10 seconds. The heavier request that reads
-  // all image/video blocks runs only when the Notion content actually changes.
+  // One lightweight request checks both profiles every 10 seconds. Only a
+  // profile whose revision changed receives the heavier media refresh.
   useEffect(() => {
     let disposed = false;
     let checking = false;
 
     const checkForUpdates = async () => {
-      if (checking) return;
+      if (checking || document.visibilityState !== "visible") return;
       checking = true;
 
       try {
         const response = await fetch(
-          "/api/posts/revision?profile=" + activeProfile + "&check=" + Date.now(),
+          "/api/posts/revision?profile=all&check=" + Date.now(),
           {
             cache: "no-store",
             headers: {
@@ -195,14 +215,17 @@ export default function InstagramWidget({
           throw new Error(data.error ?? "Não foi possível verificar o Notion.");
         }
 
-        if (
-          !disposed &&
-          activeProfileRef.current === activeProfile &&
-          typeof data.revision === "string" &&
-          data.revision !== currentRevision.current
-        ) {
-          await loadPosts(activeProfile, true);
-        }
+        if (disposed || !data.revisions) return;
+
+        (["mr", "lab"] as ProfileKey[]).forEach((profileKey) => {
+          const nextRevision = data.revisions[profileKey];
+          if (
+            typeof nextRevision === "string" &&
+            nextRevision !== currentRevisions.current[profileKey]
+          ) {
+            void loadPosts(profileKey, true);
+          }
+        });
       } catch {
         // Background checks stay quiet; the manual refresh remains available.
       } finally {
@@ -218,20 +241,27 @@ export default function InstagramWidget({
       disposed = true;
       window.clearInterval(timer);
     };
-  }, [activeProfile, loadPosts]);
+  }, [loadPosts]);
 
   const switchProfile = (profileKey: ProfileKey) => {
     if (profileKey === activeProfile) return;
     setActiveProfile(profileKey);
-    currentRevision.current = "";
-    setPosts([]);
     setSelectedPost(null);
     setStoriesOpen(false);
-    void loadPosts(profileKey);
+
+    // Profiles are already loaded into memory. Retry only when the initial
+    // server-side load for the selected profile failed.
+    if (errorsByProfile[profileKey]) {
+      void loadPosts(profileKey);
+    }
   };
 
   const activeConfig = profileConfigs[activeProfile];
   const activeProfileData = activeConfig.profile;
+  const posts = postsByProfile[activeProfile] ?? [];
+  const loading = loadingByProfile[activeProfile];
+  const error = errorsByProfile[activeProfile];
+  const lastUpdated = lastUpdatedByProfile[activeProfile];
   const sortedPosts = sortPosts(posts);
   const feedPosts = sortedPosts.filter((post) => post.format !== "Stories");
 
