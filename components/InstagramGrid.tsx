@@ -19,18 +19,18 @@ export default function InstagramGrid({ posts }: InstagramGridProps) {
             <rect x="14" y="14" width="7" height="7" rx="1" />
           </svg>
         </div>
-        <p className="text-[14px] font-semibold text-[#262626]">No posts yet</p>
+        <p className="text-[14px] font-semibold text-[#262626]">Nenhuma publicação encontrada</p>
         <p className="text-[12px] text-[#8e8e8e] mt-1">
-          Add entries to your Notion database to see them here.
+          As publicações do Instagram vinculadas à empresa MR aparecerão aqui.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-3 gap-[2px] bg-[#dbdbdb]">
-      {posts.map((post, index) => (
-        <GridCell key={post.id} post={post} index={index} />
+    <div className="grid grid-cols-3 gap-[1px] bg-white">
+      {posts.map((post) => (
+        <GridCell key={post.id} post={post} />
       ))}
     </div>
   );
