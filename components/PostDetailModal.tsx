@@ -70,7 +70,10 @@ export default function PostDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3 sm:p-6"
+      className={
+        "fixed inset-0 z-[100] flex items-center justify-center " +
+        (isReel ? "bg-black p-0 sm:p-6" : "bg-black/60 p-3 sm:p-6")
+      }
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -81,15 +84,17 @@ export default function PostDetailModal({
         aria-modal="true"
         aria-label={"Publicação: " + post.title}
         className={
-          "relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row " +
-          (isReel ? "sm:max-w-[980px]" : "sm:max-w-[850px]")
+          "relative flex w-full flex-col overflow-hidden shadow-2xl " +
+          (isReel
+            ? "h-[100dvh] max-h-[100dvh] max-w-none rounded-none bg-black sm:h-[92vh] sm:max-h-[92vh] sm:max-w-[980px] sm:flex-row sm:rounded-2xl"
+            : "max-h-[92vh] max-w-[850px] rounded-2xl bg-white sm:flex-row")
         }
       >
         <div
           className={
             "relative flex w-full flex-shrink-0 items-center justify-center overflow-hidden " +
             (isReel
-              ? "h-[62vh] max-h-[62vh] bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
+              ? "absolute inset-0 h-full max-h-full bg-black sm:relative sm:inset-auto sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
               : "max-h-[55vh] self-start overflow-y-auto bg-white sm:h-[92vh] sm:max-h-none sm:w-[48%] sm:overflow-hidden sm:bg-[#111]")
           }
         >
@@ -119,7 +124,7 @@ export default function PostDetailModal({
                       preload="metadata"
                       className={
                         isReel
-                          ? "block h-full w-full object-contain"
+                          ? "block h-full w-full object-cover sm:object-cover"
                           : "block h-auto max-h-[55vh] w-auto max-w-full object-contain sm:max-h-[92vh]"
                       }
                     />
@@ -152,6 +157,17 @@ export default function PostDetailModal({
             )}
           </div>
 
+          {isReel && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Fechar Reel"
+              className="absolute right-4 top-[calc(env(safe-area-inset-top)+12px)] z-30 rounded-full bg-black/35 p-2 text-white backdrop-blur-sm sm:hidden"
+            >
+              <X size={22} />
+            </button>
+          )}
+
           {media.length > 1 && (
             <>
               <button
@@ -179,27 +195,34 @@ export default function PostDetailModal({
           )}
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-start justify-between gap-4 border-b border-[#efefef] px-5 py-4">
+        <div
+          className={
+            "z-20 flex min-h-0 flex-col " +
+            (isReel
+              ? "absolute inset-x-0 bottom-0 max-h-[38dvh] overflow-y-auto bg-gradient-to-t from-black/90 via-black/65 to-black/20 text-white sm:relative sm:inset-auto sm:max-h-none sm:flex-1 sm:overflow-y-auto sm:bg-white sm:text-[#262626]"
+              : "flex-1")
+          }
+        >
+          <div className={"flex items-start justify-between gap-4 border-b px-5 py-4 " + (isReel ? "border-white/15 sm:border-[#efefef]" : "border-[#efefef]")}>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8e8e8e]">
+              <p className={"text-[11px] font-semibold uppercase tracking-[0.14em] " + (isReel ? "text-white/75 sm:text-[#8e8e8e]" : "text-[#8e8e8e]")}>
                 {profileName}
               </p>
-              <h2 className="mt-1 text-base font-semibold leading-snug text-[#262626]">
+              <h2 className={"mt-1 text-base font-semibold leading-snug " + (isReel ? "text-white sm:text-[#262626]" : "text-[#262626]")}>
                 {post.title}
               </h2>
               {media.length > 1 && (
-                <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-[#8e8e8e]">
+                <p className={"mt-1 inline-flex items-center gap-1 text-[10px] " + (isReel ? "text-white/75 sm:text-[#8e8e8e]" : "text-[#8e8e8e]")}>
                   <Images size={12} /> Carrossel · {media.length} mídias
                 </p>
               )}
               {loadingMedia && (
-                <p className="mt-1 text-[10px] text-[#8e8e8e]">
+                <p className={"mt-1 text-[10px] " + (isReel ? "text-white/75 sm:text-[#8e8e8e]" : "text-[#8e8e8e]")}>
                   Carregando mídias em segundo plano…
                 </p>
               )}
               {mediaError && (
-                <p className="mt-1 text-[10px] text-red-600">
+                <p className="mt-1 text-[10px] text-red-300 sm:text-red-600">
                   {mediaError}
                 </p>
               )}
@@ -213,14 +236,14 @@ export default function PostDetailModal({
               type="button"
               onClick={onClose}
               aria-label="Fechar publicação"
-              className="rounded-full p-1.5 text-[#6f6f6f] transition-colors hover:bg-[#f2f2f2]"
+              className={"rounded-full p-1.5 transition-colors " + (isReel ? "text-white hover:bg-white/15 sm:text-[#6f6f6f] sm:hover:bg-[#f2f2f2]" : "text-[#6f6f6f] hover:bg-[#f2f2f2]")}
             >
               <X size={19} />
             </button>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-[#77736d]">
+            <div className={"mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] " + (isReel ? "text-white/75 sm:text-[#77736d]" : "text-[#77736d]")}>
               {post.publishDate && (
                 <span className="inline-flex items-center gap-1.5">
                   <CalendarDays size={13} />
@@ -238,20 +261,20 @@ export default function PostDetailModal({
                 </span>
               )}
             </div>
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8e8e8e]">
+            <h3 className={"mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] " + (isReel ? "text-white/70 sm:text-[#8e8e8e]" : "text-[#8e8e8e]")}>
               Legenda
             </h3>
-            <p className="whitespace-pre-wrap text-[13px] leading-[1.75] text-[#262626]">
+            <p className={"whitespace-pre-wrap text-[13px] leading-[1.75] " + (isReel ? "text-white sm:text-[#262626]" : "text-[#262626]")}>
               {post.caption || "A legenda ainda não foi preenchida nesta publicação."}
             </p>
           </div>
 
-          <div className="border-t border-[#efefef] px-5 py-3">
+          <div className={"border-t px-5 py-3 " + (isReel ? "border-white/15 sm:border-[#efefef]" : "border-[#efefef]")}>
             <a
               href={post.pageUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#262626] hover:underline"
+              className={"inline-flex items-center gap-1.5 text-[12px] font-medium hover:underline " + (isReel ? "text-white sm:text-[#262626]" : "text-[#262626]")}
             >
               Abrir no Notion <ExternalLink size={12} />
             </a>
