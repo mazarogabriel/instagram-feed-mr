@@ -253,19 +253,43 @@ async function getPageBodyData(
 }
 
 function extractCaptionFromBody(textBlocks: string[]): string | null {
-  const markerIndex = textBlocks.findIndex((text) =>
-    /^Legenda\s*:?\s*$/i.test(text.trim())
+  const explicitMarkerIndex = textBlocks.findIndex((text) =>
+    /^\\s*Legenda\\s*:?/i.test(text)
   );
 
-  if (markerIndex < 0) return null;
+  let captionBlocks: string[] = [];
 
-  const captionBlocks: string[] = [];
-  for (const rawText of textBlocks.slice(markerIndex + 1)) {
+  if (explicitMarkerIndex >= 0) {
+    const firstBlock = textBlocks[explicitMarkerIndex].replace(
+      /^\\s*Legenda\\s*:?\\s*/i,
+      ""
+    ).trim();
+    if (firstBlock) captionBlocks.push(firstBlock);
+    captionBlocks.push(...textBlocks.slice(explicitMarkerIndex + 1));
+  } else {
+    // Some MR pages place the Portuguese caption directly after the PT-ENG
+    // marker without adding a separate "Legenda" heading.
+    const languageMarkerIndex = textBlocks.findIndex((text) =>
+      /ᴾᵀ⁻ᴱᴺᴳ|PT\\s*[-–]\\s*ENG/i.test(text)
+    );
+    if (languageMarkerIndex < 0) return null;
+
+    captionBlocks = textBlocks.slice(0, languageMarkerIndex);
+    const markerBlock = textBlocks[languageMarkerIndex].replace(
+      /^.*?(?:ᴾᵀ⁻ᴱᴺᴳ|PT\\s*[-–]\\s*ENG)\\s*/i,
+      ""
+    ).trim();
+    if (markerBlock) captionBlocks.push(markerBlock);
+    captionBlocks.push(...textBlocks.slice(languageMarkerIndex + 1));
+  }
+
+  const cleaned: string[] = [];
+  for (const rawText of captionBlocks) {
     const text = rawText.trim();
     if (!text) continue;
 
     if (
-      /^(Referência de edição|Referencias? de edição|Roteiro|Orientação de edição|Notas? de edição)/i.test(
+      /^(Referência de edição|Referencias? de edição|Roteiro|Orientação de edição|Notas? de edição|Inserir botão|Inserir imagens)/i.test(
         text
       ) ||
       /^_{8,}$/.test(text)
@@ -273,10 +297,10 @@ function extractCaptionFromBody(textBlocks: string[]): string | null {
       break;
     }
 
-    captionBlocks.push(text);
+    cleaned.push(text);
   }
 
-  return captionBlocks.join("\n\n").trim() || null;
+  return cleaned.join("\\n\\n").trim() || null;
 }
 
 async function mapWithConcurrency<T, R>(
