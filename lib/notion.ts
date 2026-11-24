@@ -80,9 +80,11 @@ function notionHeaders(token: string): HeadersInit {
   };
 }
 
+type DataSourceQueryMode = "instagram" | "untaggedPublished" | "publishedStories";
+
 async function queryDataSource(
   profile: ProfileKey,
-  onlyPublishedStories: boolean,
+  mode: DataSourceQueryMode,
   startCursor?: string
 ): Promise<DataSourceQueryResponse> {
   const companyId = PROFILE_COMPANY_IDS[profile];
@@ -91,26 +93,29 @@ async function queryDataSource(
       property: "Empresa",
       relation: { contains: companyId },
     },
-    onlyPublishedStories
-      ? {
-          property: "Tipo/Formato",
-          select: { equals: "Stories" },
-        }
-      : {
-          or: [
-            {
-              property: "Rede Social",
-              multi_select: { contains: "Instagram" },
-            },
-            {
-              property: "Rede Social",
-              multi_select: { is_empty: true },
-            },
-          ],
-        },
   ];
 
-  if (onlyPublishedStories) {
+  if (mode === "instagram") {
+    filters.push({
+      property: "Rede Social",
+      multi_select: { contains: "Instagram" },
+    });
+  } else if (mode === "untaggedPublished") {
+    // A status change to Published is enough to include an otherwise
+    // Instagram-style post whose Rede Social property has not been filled.
+    filters.push({
+      property: "Rede Social",
+      multi_select: { is_empty: true },
+    });
+    filters.push({
+      property: "Status",
+      status: { equals: "Publicado" },
+    });
+  } else {
+    filters.push({
+      property: "Tipo/Formato",
+      select: { equals: "Stories" },
+    });
     filters.push({
       property: "Status",
       status: { equals: "Publicado" },
@@ -158,13 +163,13 @@ async function queryDataSource(
 
 async function queryAllPages(
   profile: ProfileKey,
-  onlyPublishedStories: boolean
+  mode: DataSourceQueryMode
 ): Promise<NotionPage[]> {
   const pages: NotionPage[] = [];
   let cursor: string | undefined;
 
   do {
-    const result = await queryDataSource(profile, onlyPublishedStories, cursor);
+    const result = await queryDataSource(profile, mode, cursor);
     pages.push(...result.results);
     cursor =
       result.has_more && result.next_cursor ? result.next_cursor : undefined;
@@ -402,15 +407,18 @@ async function mapWithConcurrency<T, R>(
 }
 
 async function fetchProfilePages(profile: ProfileKey): Promise<NotionPage[]> {
-  const [instagramPages, publishedStoryPages] = await Promise.all([
-    queryAllPages(profile, false),
-    queryAllPages(profile, true),
-  ]);
+  const [instagramPages, publishedUntaggedPages, publishedStoryPages] =
+    await Promise.all([
+      queryAllPages(profile, "instagram"),
+      queryAllPages(profile, "untaggedPublished"),
+      queryAllPages(profile, "publishedStories"),
+    ]);
 
   // Merge Instagram posts (including untagged network entries) and published
   // Stories by page id so each Notion page appears only once.
   const pageMap = new Map<string, NotionPage>();
   for (const page of instagramPages) pageMap.set(page.id, page);
+  for (const page of publishedUntaggedPages) pageMap.set(page.id, page);
   for (const page of publishedStoryPages) pageMap.set(page.id, page);
   return Array.from(pageMap.values());
 }
