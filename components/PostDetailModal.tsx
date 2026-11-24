@@ -31,6 +31,7 @@ export default function PostDetailModal({
 
   const [activeIndex, setActiveIndex] = useState(0);
   const mediaTrackRef = useRef<HTMLDivElement>(null);
+  const isReel = post.format?.trim().toLocaleLowerCase("pt-BR") === "reels";
 
   const goToMedia = (index: number) => {
     const safeIndex = Math.max(0, Math.min(media.length - 1, index));
@@ -79,20 +80,36 @@ export default function PostDetailModal({
         role="dialog"
         aria-modal="true"
         aria-label={"Publicação: " + post.title}
-        className="relative flex max-h-[92vh] w-full max-w-[850px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row"
+        className={
+          "relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row " +
+          (isReel ? "sm:max-w-[980px]" : "sm:max-w-[850px]")
+        }
       >
-        <div className="relative max-h-[55vh] w-full flex-shrink-0 self-start overflow-y-auto bg-white sm:h-[92vh] sm:max-h-none sm:w-[48%] sm:overflow-hidden sm:bg-[#111]">
+        <div
+          className={
+            "relative flex w-full flex-shrink-0 items-center justify-center overflow-hidden " +
+            (isReel
+              ? "h-[62vh] max-h-[62vh] bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
+              : "max-h-[55vh] self-start overflow-y-auto bg-white sm:h-[92vh] sm:max-h-none sm:w-[48%] sm:overflow-hidden sm:bg-[#111]")
+          }
+        >
           <div
             ref={mediaTrackRef}
             onScroll={handleMediaScroll}
-            className="flex w-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:h-[92vh]"
+            className={
+              "flex w-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
+              (isReel ? "h-full items-center sm:h-full" : "sm:h-[92vh]")
+            }
             style={{ touchAction: "pan-x pan-y" }}
           >
             {media.length > 0 ? (
               media.map((item, index) => (
                 <div
                   key={item.url + "-" + index}
-                  className="flex w-full min-w-full flex-shrink-0 snap-center items-center justify-center sm:h-[92vh]"
+                  className={
+                    "flex w-full min-w-full flex-shrink-0 snap-center items-center justify-center " +
+                    (isReel ? "h-full" : "sm:h-[92vh]")
+                  }
                 >
                   {item.kind === "video" ? (
                     <video
@@ -100,7 +117,11 @@ export default function PostDetailModal({
                       controls
                       playsInline
                       preload="metadata"
-                      className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-w-full"
+                      className={
+                        isReel
+                          ? "block h-full w-full object-contain"
+                          : "block h-auto max-h-[55vh] w-auto max-w-full object-contain sm:max-h-[92vh]"
+                      }
                     />
                   ) : (
                     <Image
@@ -113,7 +134,11 @@ export default function PostDetailModal({
                       priority={index === 0}
                       loading="eager"
                       draggable={false}
-                      className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-w-full"
+                      className={
+                        isReel
+                          ? "block h-full w-full object-contain"
+                          : "block h-auto max-h-[55vh] w-auto max-w-full object-contain sm:max-h-[92vh]"
+                      }
                     />
                   )}
                 </div>
