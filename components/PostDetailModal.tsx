@@ -45,7 +45,7 @@ export default function PostDetailModal({
 
   useEffect(() => {
     setActiveIndex(0);
-    mediaTrackRef.current?.scrollTo({ left: 0, behavior: "instant" });
+    mediaTrackRef.current?.scrollTo({ left: 0, behavior: "auto" });
   }, [post.id]);
 
   // Start downloading every carousel image as soon as the publication opens.
