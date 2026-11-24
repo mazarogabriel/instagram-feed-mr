@@ -15,6 +15,22 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const requestedProfile = url.searchParams.get("profile");
+
+    if (requestedProfile === "all") {
+      const [mr, lab] = await Promise.all([
+        fetchPostsRevision("mr"),
+        fetchPostsRevision("lab"),
+      ]);
+
+      return NextResponse.json(
+        {
+          revisions: { mr, lab },
+          checkedAt: new Date().toISOString(),
+        },
+        { headers: noCacheHeaders }
+      );
+    }
+
     const profile: ProfileKey = requestedProfile === "lab" ? "lab" : "mr";
     const revision = await fetchPostsRevision(profile);
 
