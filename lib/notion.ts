@@ -305,6 +305,45 @@ async function getBlockChildren(
   return (await response.json()) as BlockChildrenResponse;
 }
 
+async function getFirstMediaFromBlocks(
+  blocks: NotionBlock[],
+  token: string,
+  depth = 0
+): Promise<StoryMedia | null> {
+  if (depth > 5) return null;
+
+  let firstVideo: StoryMedia | null = null;
+
+  for (const block of blocks) {
+    const media = mediaFromBlock(block);
+    if (media?.kind === "image") return media;
+    if (media?.kind === "video" && !firstVideo) firstVideo = media;
+
+    if (block.has_children) {
+      const nested = await getBlockChildren(block.id, token);
+      const childMedia = await getFirstMediaFromBlocks(
+        nested.results,
+        token,
+        depth + 1
+      );
+      if (childMedia?.kind === "image") return childMedia;
+      if (childMedia?.kind === "video" && !firstVideo) {
+        firstVideo = childMedia;
+      }
+    }
+  }
+
+  return firstVideo;
+}
+
+async function getFirstPageMedia(
+  pageId: string,
+  token: string
+): Promise<StoryMedia | null> {
+  const children = await getBlockChildren(pageId, token);
+  return getFirstMediaFromBlocks(children.results, token);
+}
+
 async function getPageBodyData(
   blockId: string,
   token: string,
@@ -460,25 +499,41 @@ export async function fetchPostsSnapshot(
   const pages = await fetchCompanyPages(profile);
   const revision = createRevision(pages);
 
-  const posts: NotionPost[] = pages.map((item) => {
+  const token = getToken();
+  const posts = await mapWithConcurrency(pages, 1, async (item) => {
     const propertyMedia = extractPropertyMedia(item.properties);
-    const caption = cleanCaption(
-      richTextToString(item.properties["Legenda (texto)"]?.rich_text)
-    );
+    let firstBodyMedia: StoryMedia | null = null;
+
+    // The workspace usually stores the cover image as a block in the page body,
+    // not in the Imagens property. Read only the first media block for the grid.
+    if (!propertyMedia.some((asset) => asset.kind === "image")) {
+      try {
+        firstBodyMedia = await getFirstPageMedia(item.id, token);
+      } catch {
+        // Keep the grid usable even when a preview cannot be fetched.
+      }
+    }
+
+    const media = dedupeMedia([
+      ...propertyMedia,
+      ...(firstBodyMedia ? [firstBodyMedia] : []),
+    ]);
 
     return {
       id: item.id,
       title: extractTitle(item.properties),
       thumbnail:
-        propertyMedia.find((asset) => asset.kind === "image")?.url ??
-        propertyMedia[0]?.url ??
+        media.find((asset) => asset.kind === "image")?.url ??
+        media[0]?.url ??
         null,
-      caption,
+      caption: cleanCaption(
+        richTextToString(item.properties["Legenda (texto)"]?.rich_text)
+      ),
       pageUrl: item.url ?? "https://www.notion.so/" + item.id.replace(/-/g, ""),
       publishDate: item.properties["Data de Publicação"]?.date?.start ?? null,
       status: item.properties["Status"]?.status?.name ?? null,
       format: item.properties["Tipo/Formato"]?.select?.name ?? null,
-      media: propertyMedia,
+      media,
     };
   });
 
