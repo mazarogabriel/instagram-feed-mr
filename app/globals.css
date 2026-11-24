@@ -38,11 +38,11 @@ body {
 
 @layer utilities {
   .grid-image {
-    @apply relative w-full bg-gray-100 overflow-hidden;
-    padding-bottom: 100%; /* square */
+    @apply relative w-full overflow-hidden bg-gray-100;
+    aspect-ratio: 3 / 4;
   }
 
   .grid-image img {
-    @apply absolute inset-0 w-full h-full object-cover;
+    @apply absolute inset-0 h-full w-full object-cover;
   }
 }

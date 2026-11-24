@@ -3,9 +3,15 @@ import type { NotionPost } from "./types";
 const NOTION_API_VERSION = "2026-03-11";
 const NOTION_API_BASE = "https://api.notion.com/v1";
 
+type RichTextItem = {
+  plain_text?: string;
+  text?: { content?: string };
+};
+
 type NotionProperty = {
   type?: string;
-  title?: Array<{ plain_text?: string }>;
+  title?: RichTextItem[];
+  rich_text?: RichTextItem[];
   files?: Array<
     | { type: "file"; file?: { url?: string } }
     | { type: "external"; external?: { url?: string } }
@@ -16,6 +22,7 @@ type NotionProperty = {
 
 type NotionPage = {
   id: string;
+  url?: string;
   object: "page";
   properties: Record<string, NotionProperty>;
 };
@@ -37,6 +44,11 @@ type BlockChildrenResponse = {
   results: NotionBlock[];
   has_more: boolean;
   next_cursor: string | null;
+};
+
+type PageBodyData = {
+  thumbnail: string | null;
+  textBlocks: string[];
 };
 
 const DATA_SOURCE_ID =
@@ -115,15 +127,21 @@ async function queryDataSource(
   return payload as DataSourceQueryResponse;
 }
 
+function richTextToString(items?: RichTextItem[]): string {
+  return (
+    items
+      ?.map((item) => item.plain_text ?? item.text?.content ?? "")
+      .join("")
+      .trim() ?? ""
+  );
+}
+
 function extractTitle(properties: Record<string, NotionProperty>): string {
   const titleProperty =
     properties["Tema"] ??
     Object.values(properties).find((property) => property.type === "title");
 
-  return (
-    titleProperty?.title?.map((item) => item.plain_text ?? "").join("") ||
-    "Sem título"
-  );
+  return richTextToString(titleProperty?.title) || "Sem título";
 }
 
 function extractImage(properties: Record<string, NotionProperty>): string | null {
@@ -134,6 +152,23 @@ function extractImage(properties: Record<string, NotionProperty>): string | null
   if (firstFile.type === "file") return firstFile.file?.url ?? null;
   if (firstFile.type === "external") return firstFile.external?.url ?? null;
   return null;
+}
+
+function extractCaptionProperty(
+  properties: Record<string, NotionProperty>
+): string | null {
+  const caption = richTextToString(properties["Legenda (texto)"]?.rich_text);
+  return caption || null;
+}
+
+function extractPublishDate(
+  properties: Record<string, NotionProperty>
+): string | null {
+  return properties["Data de Publicação"]?.date?.start ?? null;
+}
+
+function extractStatus(properties: Record<string, NotionProperty>): string | null {
+  return properties["Status"]?.status?.name ?? null;
 }
 
 function imageUrlFromBlock(block: NotionBlock): string | null {
@@ -153,6 +188,16 @@ function imageUrlFromBlock(block: NotionBlock): string | null {
   return image.file?.url ?? image.external?.url ?? null;
 }
 
+function textFromBlock(block: NotionBlock): string | null {
+  const content = block[block.type] as
+    | { rich_text?: RichTextItem[]; title?: RichTextItem[] }
+    | undefined;
+
+  if (!content) return null;
+  const text = richTextToString(content.rich_text) || richTextToString(content.title);
+  return text || null;
+}
+
 async function getBlockChildren(
   blockId: string,
   token: string,
@@ -170,39 +215,68 @@ async function getBlockChildren(
   );
 
   if (!response.ok) {
-    throw new Error("Não foi possível ler os blocos da publicação.");
+    throw new Error("Não foi possível ler o conteúdo da publicação.");
   }
 
   return (await response.json()) as BlockChildrenResponse;
 }
 
-async function findImageInBlocks(
+async function getPageBodyData(
   blockId: string,
   token: string,
   depth = 0
-): Promise<string | null> {
-  if (depth > 4) return null;
+): Promise<PageBodyData> {
+  const data: PageBodyData = { thumbnail: null, textBlocks: [] };
+  if (depth > 5) return data;
 
   let cursor: string | undefined;
   do {
     const page = await getBlockChildren(blockId, token, cursor);
 
     for (const block of page.results) {
-      const imageUrl = imageUrlFromBlock(block);
-      if (imageUrl) return imageUrl;
+      data.thumbnail ??= imageUrlFromBlock(block);
 
-      // Images are often nested inside Notion columns. Follow only blocks
-      // that actually contain children, with a shallow depth limit.
+      const blockText = textFromBlock(block);
+      if (blockText) data.textBlocks.push(blockText);
+
       if (block.has_children) {
-        const nestedImage = await findImageInBlocks(block.id, token, depth + 1);
-        if (nestedImage) return nestedImage;
+        const nested = await getPageBodyData(block.id, token, depth + 1);
+        data.thumbnail ??= nested.thumbnail;
+        data.textBlocks.push(...nested.textBlocks);
       }
     }
 
     cursor = page.has_more ? page.next_cursor ?? undefined : undefined;
   } while (cursor);
 
-  return null;
+  return data;
+}
+
+function extractCaptionFromBody(textBlocks: string[]): string | null {
+  const markerIndex = textBlocks.findIndex((text) =>
+    /^Legenda\s*:?\s*$/i.test(text.trim())
+  );
+
+  if (markerIndex < 0) return null;
+
+  const captionBlocks: string[] = [];
+  for (const rawText of textBlocks.slice(markerIndex + 1)) {
+    const text = rawText.trim();
+    if (!text) continue;
+
+    if (
+      /^(Referência de edição|Referencias? de edição|Roteiro|Orientação de edição|Notas? de edição)/i.test(
+        text
+      ) ||
+      /^_{8,}$/.test(text)
+    ) {
+      break;
+    }
+
+    captionBlocks.push(text);
+  }
+
+  return captionBlocks.join("\n\n").trim() || null;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -227,16 +301,6 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-function extractPublishDate(
-  properties: Record<string, NotionProperty>
-): string | null {
-  return properties["Data de Publicação"]?.date?.start ?? null;
-}
-
-function extractStatus(properties: Record<string, NotionProperty>): string | null {
-  return properties["Status"]?.status?.name ?? null;
-}
-
 export async function fetchPosts(): Promise<NotionPost[]> {
   const pages: NotionPage[] = [];
   let cursor: string | undefined;
@@ -249,17 +313,18 @@ export async function fetchPosts(): Promise<NotionPost[]> {
 
   const token = getToken();
   const posts = await mapWithConcurrency(pages, 3, async (item) => {
-    const propertyThumbnail = extractImage(item.properties);
-    let thumbnail = propertyThumbnail;
+    let thumbnail = extractImage(item.properties);
+    let caption = extractCaptionProperty(item.properties);
 
-    // The MR calendar frequently stores the artwork as an image block inside
-    // the page body rather than in the "Imagens" property. Use that as a
-    // fallback so the grid can display the artwork already attached to posts.
-    if (!thumbnail) {
+    // The MR calendar stores some artwork and captions in the page body,
+    // rather than in database properties. Reuse one block traversal for both.
+    if (!thumbnail || !caption) {
       try {
-        thumbnail = await findImageInBlocks(item.id, token);
+        const body = await getPageBodyData(item.id, token);
+        thumbnail ??= body.thumbnail;
+        caption ??= extractCaptionFromBody(body.textBlocks);
       } catch {
-        thumbnail = null;
+        // Keep any values already read from properties if body access fails.
       }
     }
 
@@ -267,6 +332,8 @@ export async function fetchPosts(): Promise<NotionPost[]> {
       id: item.id,
       title: extractTitle(item.properties),
       thumbnail,
+      caption,
+      pageUrl: item.url ?? "https://www.notion.so/" + item.id.replace(/-/g, ""),
       publishDate: extractPublishDate(item.properties),
       status: extractStatus(item.properties),
     };

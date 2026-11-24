@@ -2,6 +2,8 @@ export interface NotionPost {
   id: string;
   title: string;
   thumbnail: string | null;
+  caption: string | null;
+  pageUrl: string;
   publishDate: string | null;
   status: string | null;
 }
