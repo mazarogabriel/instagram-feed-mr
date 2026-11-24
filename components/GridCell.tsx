@@ -21,7 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
   Concluído: "bg-green-600",
 };
 
-export default function GridCell({ post, index }: GridCellProps) {
+export default function GridCell({ post }: GridCellProps) {
   const [hover, setHover] = useState(false);
   const [imgError, setImgError] = useState(false);
   const statusColor = post.status ? STATUS_COLORS[post.status] ?? "bg-gray-400" : null;
@@ -40,16 +40,16 @@ export default function GridCell({ post, index }: GridCellProps) {
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-105"
             onError={() => setImgError(true)}
-            sizes="(max-width: 600px) 33vw, 200px"
+            sizes="(max-width: 430px) 33vw, 140px"
             unoptimized
           />
         ) : (
-          <PlaceholderCell index={index} title={post.title} />
+          <PlaceholderCell title={post.title} />
         )}
 
         <div
           className={cn(
-            "absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-1 transition-opacity duration-200 p-2",
+            "absolute inset-0 bg-black/45 flex flex-col items-center justify-center gap-1 transition-opacity duration-200 p-2",
             hover ? "opacity-100" : "opacity-0"
           )}
         >
@@ -78,23 +78,10 @@ export default function GridCell({ post, index }: GridCellProps) {
   );
 }
 
-function PlaceholderCell({ index, title }: { index: number; title: string }) {
-  const gradients = [
-    "from-rose-200 to-pink-300",
-    "from-sky-200 to-blue-300",
-    "from-emerald-200 to-green-300",
-    "from-violet-200 to-purple-300",
-    "from-amber-200 to-yellow-300",
-    "from-teal-200 to-cyan-300",
-  ];
-  const gradient = gradients[index % gradients.length];
-
+function PlaceholderCell({ title }: { title: string }) {
   return (
-    <div className={cn(
-      "absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br gap-1 p-2",
-      gradient
-    )}>
-      <span className="text-white/70 text-[10px] font-medium text-center line-clamp-3 leading-tight">
+    <div className="absolute inset-0 flex items-center justify-center bg-[#eeece7] p-3">
+      <span className="text-[#77736d] text-[10px] tracking-[0.06em] text-center line-clamp-3 leading-tight">
         {title}
       </span>
     </div>
