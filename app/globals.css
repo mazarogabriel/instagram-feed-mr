@@ -36,6 +36,22 @@ body {
   outline-offset: 2px;
 }
 
+@keyframes story-progress {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.story-progress {
+  width: 100%;
+  animation-name: story-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
 @layer utilities {
   .grid-image {
     @apply relative w-full overflow-hidden bg-gray-100;

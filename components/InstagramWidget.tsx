@@ -12,6 +12,7 @@ import ErrorBanner from "./ErrorBanner";
 import LoadingSkeleton from "./LoadingSkeleton";
 import StatusFilter from "./StatusFilter";
 import PostDetailModal from "./PostDetailModal";
+import StoryViewer from "./StoryViewer";
 
 interface InstagramWidgetProps {
   initialPosts: NotionPost[];
@@ -40,6 +41,8 @@ export default function InstagramWidget({
   const [showPublished, setShowPublished] = useState(true);
   const [showCompleted, setShowCompleted] = useState(true);
   const [selectedPost, setSelectedPost] = useState<NotionPost | null>(null);
+  const [storiesOpen, setStoriesOpen] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     try {
@@ -81,13 +84,28 @@ export default function InstagramWidget({
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(undefined);
+
     try {
-      const response = await fetch("/api/posts", { cache: "no-store" });
+      const response = await fetch("/api/posts?refresh=" + Date.now(), {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache, no-store",
+          Pragma: "no-cache",
+        },
+      });
       const data = await response.json();
+
       if (!response.ok) {
         throw new Error(data.error ?? "Não foi possível atualizar as publicações.");
       }
-      setPosts(data.posts);
+      if (!Array.isArray(data.posts)) {
+        throw new Error("A resposta do Notion não trouxe uma lista de publicações.");
+      }
+
+      // Replace the array reference so every view (grid, map and Stories)
+      // recalculates from the same fresh Notion response.
+      setPosts([...data.posts]);
+      setLastUpdated(new Date());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro desconhecido.");
     } finally {
@@ -96,13 +114,27 @@ export default function InstagramWidget({
   }, []);
 
   const sortedPosts = sortPosts(posts);
-  const visiblePosts = sortedPosts.filter((post) => {
+  const feedPosts = sortedPosts.filter((post) => post.format !== "Stories");
+
+  const visiblePosts = feedPosts.filter((post) => {
     if (post.status === "Publicado") return showPublished;
     if (post.status === "Concluído") return showCompleted;
     return false;
   });
-  const publishedCount = posts.filter((post) => post.status === "Publicado").length;
-  const completedCount = posts.filter((post) => post.status === "Concluído").length;
+
+  // Only published Stories are grouped behind the profile-photo story ring.
+  // Completed Stories stay out of both the ring and the normal post grid.
+  const publishedStories = sortedPosts
+    .filter((post) => post.format === "Stories" && post.status === "Publicado")
+    .sort((a, b) => {
+      if (!a.publishDate && !b.publishDate) return 0;
+      if (!a.publishDate) return -1;
+      if (!b.publishDate) return 1;
+      return a.publishDate.localeCompare(b.publishDate);
+    });
+
+  const publishedCount = feedPosts.filter((post) => post.status === "Publicado").length;
+  const completedCount = feedPosts.filter((post) => post.status === "Concluído").length;
   const [activeTab, setActiveTab] = useState<"grid" | "map">("grid");
 
   return (
@@ -113,7 +145,14 @@ export default function InstagramWidget({
         </span>
       </div>
 
-      {settings.showBio && <ProfileHeader profile={profile} postCount={visiblePosts.length} />}
+      {settings.showBio && (
+        <ProfileHeader
+          profile={profile}
+          postCount={visiblePosts.length}
+          storyCount={publishedStories.length}
+          onOpenStories={() => setStoriesOpen(true)}
+        />
+      )}
 
       {settings.showHighlights && highlights.length > 0 && (
         <div className="border-b border-[#dbdbdb] py-3">
@@ -187,11 +226,26 @@ export default function InstagramWidget({
       <div className="mt-2 border-t border-[#dbdbdb] px-4 py-3 text-center">
         <p className="text-[10px] text-[#8e8e8e]">
           Conectado ao Notion · {visiblePosts.length} publicações visíveis
+          {lastUpdated
+            ? " · Atualizado às " +
+              lastUpdated.toLocaleTimeString("pt-BR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : ""}
         </p>
       </div>
 
       {selectedPost && (
         <PostDetailModal post={selectedPost} onClose={() => setSelectedPost(null)} />
+      )}
+
+      {storiesOpen && (
+        <StoryViewer
+          posts={publishedStories}
+          username={"@" + profile.username}
+          onClose={() => setStoriesOpen(false)}
+        />
       )}
     </div>
   );

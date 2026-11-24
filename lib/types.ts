@@ -1,3 +1,8 @@
+export interface StoryMedia {
+  url: string;
+  kind: "image" | "video";
+}
+
 export interface NotionPost {
   id: string;
   title: string;
@@ -6,6 +11,8 @@ export interface NotionPost {
   pageUrl: string;
   publishDate: string | null;
   status: string | null;
+  format: string | null;
+  storyMedia: StoryMedia[];
 }
 
 export interface Profile {

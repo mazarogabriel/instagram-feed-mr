@@ -1,4 +1,4 @@
-import type { NotionPost } from "./types";
+import type { NotionPost, StoryMedia } from "./types";
 
 const NOTION_API_VERSION = "2026-03-11";
 const NOTION_API_BASE = "https://api.notion.com/v1";
@@ -8,14 +8,16 @@ type RichTextItem = {
   text?: { content?: string };
 };
 
+type NotionFile =
+  | { type: "file"; name?: string; file?: { url?: string; mime_type?: string } }
+  | { type: "external"; name?: string; external?: { url?: string } };
+
 type NotionProperty = {
   type?: string;
   title?: RichTextItem[];
   rich_text?: RichTextItem[];
-  files?: Array<
-    | { type: "file"; file?: { url?: string } }
-    | { type: "external"; external?: { url?: string } }
-  >;
+  files?: NotionFile[];
+  select?: { name?: string } | null;
   date?: { start?: string | null } | null;
   status?: { name?: string } | null;
 };
@@ -47,7 +49,7 @@ type BlockChildrenResponse = {
 };
 
 type PageBodyData = {
-  thumbnail: string | null;
+  media: StoryMedia[];
   textBlocks: string[];
 };
 
@@ -85,15 +87,38 @@ async function queryDataSource(
         result_type: "page",
         page_size: 100,
         ...(startCursor ? { start_cursor: startCursor } : {}),
+        // Ordinary Instagram posts need the Instagram network tag.
+        // Published Stories are also included by format/status, because some
+        // Story entries in this workspace do not have Rede Social filled in.
         filter: {
-          and: [
+          or: [
             {
-              property: "Rede Social",
-              multi_select: { contains: "Instagram" },
+              and: [
+                {
+                  property: "Rede Social",
+                  multi_select: { contains: "Instagram" },
+                },
+                {
+                  property: "Empresa",
+                  relation: { contains: MR_COMPANY_PAGE_ID },
+                },
+              ],
             },
             {
-              property: "Empresa",
-              relation: { contains: MR_COMPANY_PAGE_ID },
+              and: [
+                {
+                  property: "Tipo/Formato",
+                  select: { equals: "Stories" },
+                },
+                {
+                  property: "Status",
+                  status: { equals: "Publicado" },
+                },
+                {
+                  property: "Empresa",
+                  relation: { contains: MR_COMPANY_PAGE_ID },
+                },
+              ],
             },
           ],
         },
@@ -136,6 +161,45 @@ function richTextToString(items?: RichTextItem[]): string {
   );
 }
 
+function normalizeLineBreaks(value: string): string {
+  return value
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/&lt;br\s*\/?&gt;/gi, "\n")
+    .replace(/<\/p\s*>/gi, "\n\n")
+    .replace(/<p[^>]*>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\\_/g, "_")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function cleanCaption(value: string): string | null {
+  let caption = normalizeLineBreaks(value)
+    .replace(/^Legenda\s*:?\s*/i, "")
+    .replace(/^ᴾᵀ⁻ᴱᴺᴳ\s*/i, "")
+    .trim();
+
+  const editorialBoundary =
+    /(?:^|\n)\s*(?:_{8,}|Referência de edição|Referencias? de edição|Roteiro|Orientação de edição|Notas? de edição|Inserir botão|Inserir imagens)/i.exec(
+      caption
+    );
+
+  if (editorialBoundary && editorialBoundary.index >= 0) {
+    caption = caption.slice(0, editorialBoundary.index).trim();
+  }
+
+  return caption || null;
+}
+
 function extractTitle(properties: Record<string, NotionProperty>): string {
   const titleProperty =
     properties["Tema"] ??
@@ -144,48 +208,71 @@ function extractTitle(properties: Record<string, NotionProperty>): string {
   return richTextToString(titleProperty?.title) || "Sem título";
 }
 
-function extractImage(properties: Record<string, NotionProperty>): string | null {
-  const files = properties["Imagens"]?.files ?? [];
-  const firstFile = files[0];
-
-  if (!firstFile) return null;
-  if (firstFile.type === "file") return firstFile.file?.url ?? null;
-  if (firstFile.type === "external") return firstFile.external?.url ?? null;
-  return null;
+function inferMediaKind(
+  url: string,
+  name = "",
+  mimeType = ""
+): StoryMedia["kind"] {
+  const source = (url + " " + name + " " + mimeType).toLowerCase();
+  return mimeType.toLowerCase().startsWith("video/") ||
+    /\.(mp4|mov|m4v|webm)(?:[?#\s]|$)/i.test(source)
+    ? "video"
+    : "image";
 }
 
-function extractCaptionProperty(
+function extractPropertyMedia(
   properties: Record<string, NotionProperty>
-): string | null {
-  const caption = richTextToString(properties["Legenda (texto)"]?.rich_text);
-  return caption || null;
+): StoryMedia[] {
+  return (properties["Imagens"]?.files ?? []).flatMap((file) => {
+    const url =
+      file.type === "file"
+        ? file.file?.url
+        : file.type === "external"
+          ? file.external?.url
+          : undefined;
+
+    if (!url) return [];
+
+    const mimeType = file.type === "file" ? file.file?.mime_type ?? "" : "";
+    return [
+      {
+        url,
+        kind: inferMediaKind(url, file.name ?? "", mimeType),
+      },
+    ];
+  });
 }
 
-function extractPublishDate(
-  properties: Record<string, NotionProperty>
-): string | null {
-  return properties["Data de Publicação"]?.date?.start ?? null;
-}
+function mediaFromBlock(block: NotionBlock): StoryMedia | null {
+  if (!["image", "video", "file", "pdf"].includes(block.type)) return null;
 
-function extractStatus(properties: Record<string, NotionProperty>): string | null {
-  return properties["Status"]?.status?.name ?? null;
-}
-
-function imageUrlFromBlock(block: NotionBlock): string | null {
-  if (block.type !== "image") return null;
-
-  const image = block.image as
+  const content = block[block.type] as
     | {
         type?: string;
-        file?: { url?: string };
+        file?: { url?: string; mime_type?: string; name?: string };
         external?: { url?: string };
       }
     | undefined;
 
-  if (!image) return null;
-  if (image.type === "file") return image.file?.url ?? null;
-  if (image.type === "external") return image.external?.url ?? null;
-  return image.file?.url ?? image.external?.url ?? null;
+  if (!content) return null;
+
+  const url =
+    content.type === "external"
+      ? content.external?.url
+      : content.file?.url ?? content.external?.url;
+
+  if (!url) return null;
+
+  const kind =
+    block.type === "video"
+      ? "video"
+      : inferMediaKind(
+          url,
+          content.file?.name ?? "",
+          content.file?.mime_type ?? ""
+        );
+
+  return { url, kind };
 }
 
 function textFromBlock(block: NotionBlock): string | null {
@@ -226,7 +313,7 @@ async function getPageBodyData(
   token: string,
   depth = 0
 ): Promise<PageBodyData> {
-  const data: PageBodyData = { thumbnail: null, textBlocks: [] };
+  const data: PageBodyData = { media: [], textBlocks: [] };
   if (depth > 5) return data;
 
   let cursor: string | undefined;
@@ -234,14 +321,15 @@ async function getPageBodyData(
     const page = await getBlockChildren(blockId, token, cursor);
 
     for (const block of page.results) {
-      data.thumbnail ??= imageUrlFromBlock(block);
+      const media = mediaFromBlock(block);
+      if (media) data.media.push(media);
 
       const blockText = textFromBlock(block);
       if (blockText) data.textBlocks.push(blockText);
 
       if (block.has_children) {
         const nested = await getPageBodyData(block.id, token, depth + 1);
-        data.thumbnail ??= nested.thumbnail;
+        data.media.push(...nested.media);
         data.textBlocks.push(...nested.textBlocks);
       }
     }
@@ -249,58 +337,31 @@ async function getPageBodyData(
     cursor = page.has_more ? page.next_cursor ?? undefined : undefined;
   } while (cursor);
 
+  const seen = new Set<string>();
+  data.media = data.media.filter((asset) => {
+    if (seen.has(asset.url)) return false;
+    seen.add(asset.url);
+    return true;
+  });
+
   return data;
 }
 
 function extractCaptionFromBody(textBlocks: string[]): string | null {
-  const explicitMarkerIndex = textBlocks.findIndex((text) =>
-    /^\\s*Legenda\\s*:?/i.test(text)
-  );
+  const body = normalizeLineBreaks(textBlocks.join("\n\n"));
+  if (!body) return null;
 
-  let captionBlocks: string[] = [];
-
-  if (explicitMarkerIndex >= 0) {
-    const firstBlock = textBlocks[explicitMarkerIndex].replace(
-      /^\\s*Legenda\\s*:?\\s*/i,
-      ""
-    ).trim();
-    if (firstBlock) captionBlocks.push(firstBlock);
-    captionBlocks.push(...textBlocks.slice(explicitMarkerIndex + 1));
-  } else {
-    // Some MR pages place the Portuguese caption directly after the PT-ENG
-    // marker without adding a separate "Legenda" heading.
-    const languageMarkerIndex = textBlocks.findIndex((text) =>
-      /ᴾᵀ⁻ᴱᴺᴳ|PT\\s*[-–]\\s*ENG/i.test(text)
-    );
-    if (languageMarkerIndex < 0) return null;
-
-    captionBlocks = textBlocks.slice(0, languageMarkerIndex);
-    const markerBlock = textBlocks[languageMarkerIndex].replace(
-      /^.*?(?:ᴾᵀ⁻ᴱᴺᴳ|PT\\s*[-–]\\s*ENG)\\s*/i,
-      ""
-    ).trim();
-    if (markerBlock) captionBlocks.push(markerBlock);
-    captionBlocks.push(...textBlocks.slice(languageMarkerIndex + 1));
+  const explicitMarker = /(?:^|\n)\s*Legenda\s*:?\s*/i.exec(body);
+  if (explicitMarker) {
+    return cleanCaption(body.slice(explicitMarker.index + explicitMarker[0].length));
   }
 
-  const cleaned: string[] = [];
-  for (const rawText of captionBlocks) {
-    const text = rawText.trim();
-    if (!text) continue;
-
-    if (
-      /^(Referência de edição|Referencias? de edição|Roteiro|Orientação de edição|Notas? de edição|Inserir botão|Inserir imagens)/i.test(
-        text
-      ) ||
-      /^_{8,}$/.test(text)
-    ) {
-      break;
-    }
-
-    cleaned.push(text);
+  const languageMarker = /(?:^|\n)\s*ᴾᵀ⁻ᴱᴺᴳ\s*/i.exec(body);
+  if (languageMarker) {
+    return cleanCaption(body.slice(languageMarker.index + languageMarker[0].length));
   }
 
-  return cleaned.join("\\n\\n").trim() || null;
+  return null;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -337,20 +398,31 @@ export async function fetchPosts(): Promise<NotionPost[]> {
 
   const token = getToken();
   const posts = await mapWithConcurrency(pages, 3, async (item) => {
-    let thumbnail = extractImage(item.properties);
-    let caption = extractCaptionProperty(item.properties);
+    const propertyMedia = extractPropertyMedia(item.properties);
+    let caption = cleanCaption(
+      richTextToString(item.properties["Legenda (texto)"]?.rich_text)
+    );
+    let bodyMedia: StoryMedia[] = [];
+    const format = item.properties["Tipo/Formato"]?.select?.name ?? null;
 
-    // The MR calendar stores some artwork and captions in the page body,
-    // rather than in database properties. Reuse one block traversal for both.
-    if (!thumbnail || !caption) {
+    // Story pages can contain several image/video blocks. Read the whole body
+    // for Stories even when a thumbnail is already present in a property.
+    if (format === "Stories" || !caption || propertyMedia.length === 0) {
       try {
         const body = await getPageBodyData(item.id, token);
-        thumbnail ??= body.thumbnail;
+        bodyMedia = body.media;
         caption ??= extractCaptionFromBody(body.textBlocks);
       } catch {
-        // Keep any values already read from properties if body access fails.
+        // Keep values already read from database properties.
       }
     }
+
+    const allMedia = [...propertyMedia, ...bodyMedia].filter(
+      (asset, index, array) =>
+        array.findIndex((candidate) => candidate.url === asset.url) === index
+    );
+    const thumbnail =
+      allMedia.find((asset) => asset.kind === "image")?.url ?? null;
 
     return {
       id: item.id,
@@ -358,8 +430,10 @@ export async function fetchPosts(): Promise<NotionPost[]> {
       thumbnail,
       caption,
       pageUrl: item.url ?? "https://www.notion.so/" + item.id.replace(/-/g, ""),
-      publishDate: extractPublishDate(item.properties),
-      status: extractStatus(item.properties),
+      publishDate: item.properties["Data de Publicação"]?.date?.start ?? null,
+      status: item.properties["Status"]?.status?.name ?? null,
+      format,
+      storyMedia: format === "Stories" ? allMedia : [],
     };
   });
 

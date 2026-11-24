@@ -8,34 +8,47 @@ interface AvatarProps {
   alt: string;
   size?: number;
   className?: string;
+  hasStory?: boolean;
+  onClick?: () => void;
 }
 
-export default function Avatar({ src, alt, size = 77, className = "" }: AvatarProps) {
+export default function Avatar({
+  src,
+  alt,
+  size = 77,
+  className = "",
+  hasStory = false,
+  onClick,
+}: AvatarProps) {
   const [error, setError] = useState(false);
-
   const initial = alt?.[0]?.toUpperCase() ?? "?";
 
-  return (
+  const avatar = (
     <div
-      className={`relative rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-yellow-400 via-pink-500 to-purple-600 p-[2px] ${className}`}
+      className={
+        "relative flex-shrink-0 overflow-hidden rounded-full p-[2px] " +
+        (hasStory
+          ? "bg-gradient-to-br from-yellow-400 via-pink-500 to-purple-600"
+          : "bg-[#dbdbdb]") +
+        " " +
+        className
+      }
       style={{ width: size + 4, height: size + 4 }}
     >
-      <div
-        className="rounded-full overflow-hidden bg-white p-[2px] w-full h-full"
-      >
+      <div className="h-full w-full overflow-hidden rounded-full bg-white p-[2px]">
         {!error && src ? (
           <Image
             src={src}
             alt={alt}
             width={size}
             height={size}
-            className="rounded-full object-cover w-full h-full"
+            className="h-full w-full rounded-full object-cover"
             onError={() => setError(true)}
             unoptimized
           />
         ) : (
           <div
-            className="rounded-full bg-gray-200 w-full h-full flex items-center justify-center text-gray-500 font-semibold"
+            className="flex h-full w-full items-center justify-center rounded-full bg-gray-200 font-semibold text-gray-500"
             style={{ fontSize: size * 0.4 }}
           >
             {initial}
@@ -44,4 +57,19 @@ export default function Avatar({ src, alt, size = 77, className = "" }: AvatarPr
       </div>
     </div>
   );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label="Ver stories publicados"
+        className="rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#0095f6]"
+      >
+        {avatar}
+      </button>
+    );
+  }
+
+  return avatar;
 }
