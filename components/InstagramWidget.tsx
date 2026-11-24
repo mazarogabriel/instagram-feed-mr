@@ -18,6 +18,7 @@ import StoryViewer from "./StoryViewer";
 
 interface InstagramWidgetProps {
   initialPosts: NotionPost[];
+  initialRevision: string;
   profile: Profile;
   highlights: Highlight[];
   initialError?: string;
@@ -38,6 +39,7 @@ const DEFAULT_SETTINGS: WidgetSettings = {
 
 export default function InstagramWidget({
   initialPosts,
+  initialRevision,
   profile,
   highlights,
   initialError,
@@ -77,6 +79,9 @@ export default function InstagramWidget({
   const [storiesOpen, setStoriesOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const requestSequence = useRef(0);
+  const currentRevision = useRef(initialRevision);
+  const activeProfileRef = useRef(activeProfile);
+  activeProfileRef.current = activeProfile;
 
   useEffect(() => {
     try {
@@ -115,10 +120,12 @@ export default function InstagramWidget({
     }
   }, [showPublished, showCompleted]);
 
-  const loadPosts = useCallback(async (profileKey: ProfileKey) => {
+  const loadPosts = useCallback(async (profileKey: ProfileKey, silent = false) => {
     const requestId = ++requestSequence.current;
-    setLoading(true);
-    setError(undefined);
+    if (!silent) {
+      setLoading(true);
+      setError(undefined);
+    }
 
     try {
       const response = await fetch(
@@ -142,14 +149,16 @@ export default function InstagramWidget({
 
       if (requestId === requestSequence.current) {
         setPosts([...data.posts]);
+        currentRevision.current = data.revision ?? "";
         setLastUpdated(new Date());
+        if (silent) setError(undefined);
       }
     } catch (e) {
-      if (requestId === requestSequence.current) {
+      if (requestId === requestSequence.current && !silent) {
         setError(e instanceof Error ? e.message : "Erro desconhecido.");
       }
     } finally {
-      if (requestId === requestSequence.current) {
+      if (requestId === requestSequence.current && !silent) {
         setLoading(false);
       }
     }
@@ -159,9 +168,62 @@ export default function InstagramWidget({
     void loadPosts(activeProfile);
   }, [activeProfile, loadPosts]);
 
+  // Check only page revisions every 10 seconds. The heavier request that reads
+  // all image/video blocks runs only when the Notion content actually changes.
+  useEffect(() => {
+    let disposed = false;
+    let checking = false;
+
+    const checkForUpdates = async () => {
+      if (checking) return;
+      checking = true;
+
+      try {
+        const response = await fetch(
+          "/api/posts/revision?profile=" + activeProfile + "&check=" + Date.now(),
+          {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache, no-store",
+              Pragma: "no-cache",
+            },
+          }
+        );
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "Não foi possível verificar o Notion.");
+        }
+
+        if (
+          !disposed &&
+          activeProfileRef.current === activeProfile &&
+          typeof data.revision === "string" &&
+          data.revision !== currentRevision.current
+        ) {
+          await loadPosts(activeProfile, true);
+        }
+      } catch {
+        // Background checks stay quiet; the manual refresh remains available.
+      } finally {
+        checking = false;
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void checkForUpdates();
+    }, 10_000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [activeProfile, loadPosts]);
+
   const switchProfile = (profileKey: ProfileKey) => {
     if (profileKey === activeProfile) return;
     setActiveProfile(profileKey);
+    currentRevision.current = "";
     setPosts([]);
     setSelectedPost(null);
     setStoriesOpen(false);
@@ -316,6 +378,7 @@ export default function InstagramWidget({
                 minute: "2-digit",
               })
             : ""}
+          {" · Verificação automática a cada 10 s"}
         </p>
       </div>
 
