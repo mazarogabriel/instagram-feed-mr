@@ -74,9 +74,11 @@ export default function InstagramWidget({
   const [activeTab, setActiveTab] = useState<"grid" | "map">("grid");
 
   return (
-    <div className="bg-white min-h-full overflow-auto">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#dbdbdb]">
-        <span className="text-[14px] font-semibold text-[#262626]">@{profile.username}</span>
+    <div className="w-full max-w-[430px] min-h-[780px] bg-white overflow-hidden rounded-[28px] border border-[#e8e6e2] shadow-[0_18px_55px_rgba(28,25,20,0.10)]">
+      <div className="flex items-center justify-center px-4 py-3 border-b border-[#efefef] bg-white">
+        <span className="text-[13px] font-semibold tracking-[0.16em] text-[#262626] uppercase">
+          Melina Romano
+        </span>
       </div>
 
       {settings.showBio && <ProfileHeader profile={profile} postCount={posts.length} />}
@@ -100,7 +102,7 @@ export default function InstagramWidget({
         <button
           onClick={() => setActiveTab("grid")}
           className={
-            "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold transition-colors border-b-2 " +
+            "flex-1 flex items-center justify-center gap-1.5 py-3 text-[12px] font-semibold transition-colors border-b-2 " +
             (activeTab === "grid"
               ? "border-[#262626] text-[#262626]"
               : "border-transparent text-[#8e8e8e] hover:text-[#262626]")
@@ -118,7 +120,7 @@ export default function InstagramWidget({
           <button
             onClick={() => setActiveTab("map")}
             className={
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold transition-colors border-b-2 " +
+              "flex-1 flex items-center justify-center gap-1.5 py-3 text-[12px] font-semibold transition-colors border-b-2 " +
               (activeTab === "map"
                 ? "border-[#262626] text-[#262626]"
                 : "border-transparent text-[#8e8e8e] hover:text-[#262626]")
