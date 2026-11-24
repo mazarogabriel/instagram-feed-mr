@@ -59,14 +59,14 @@ export default function PostDetailModal({
         aria-label={"Publicação: " + post.title}
         className="relative flex max-h-[92vh] w-full max-w-[850px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row"
       >
-        <div className="relative flex w-full flex-shrink-0 self-start items-center justify-center bg-[#f4f3f0] sm:w-[48%]">
+        <div className="relative flex w-full flex-shrink-0 self-start items-center justify-center bg-white sm:h-[92vh] sm:w-[48%] sm:bg-[#111]">
           {currentMedia?.kind === "video" ? (
             <video
               key={currentMedia.url}
               src={currentMedia.url}
               controls
               playsInline
-              className="block h-auto w-auto max-h-[48vh] max-w-full object-contain sm:max-h-[92vh]"
+              className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-h-[92vh]"
             />
           ) : currentMedia?.url ? (
             <img
