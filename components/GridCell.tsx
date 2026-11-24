@@ -8,7 +8,6 @@ import { CalendarDays } from "lucide-react";
 
 interface GridCellProps {
   post: NotionPost;
-  index: number;
 }
 
 const STATUS_COLORS: Record<string, string> = {
