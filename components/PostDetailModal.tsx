@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
@@ -48,27 +49,6 @@ export default function PostDetailModal({
     mediaTrackRef.current?.scrollTo({ left: 0, behavior: "auto" });
   }, [post.id]);
 
-  // Start downloading every carousel image as soon as the publication opens.
-  // These requests populate the browser cache before the user swipes to them.
-  useEffect(() => {
-    const preloadedImages: HTMLImageElement[] = [];
-
-    media.forEach((item) => {
-      if (item.kind !== "image") return;
-      const image = new window.Image();
-      image.decoding = "async";
-      image.src = item.url;
-      preloadedImages.push(image);
-    });
-
-    return () => {
-      preloadedImages.forEach((image) => {
-        image.onload = null;
-        image.onerror = null;
-      });
-    };
-  }, [post.id, media]);
-
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -97,7 +77,7 @@ export default function PostDetailModal({
         aria-label={"Publicação: " + post.title}
         className="relative flex max-h-[92vh] w-full max-w-[850px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:flex-row"
       >
-        <div className="relative w-full flex-shrink-0 self-start bg-white sm:h-[92vh] sm:w-[48%] sm:bg-[#111]">
+        <div className="relative max-h-[55vh] w-full flex-shrink-0 self-start overflow-y-auto bg-white sm:h-[92vh] sm:max-h-none sm:w-[48%] sm:overflow-hidden sm:bg-[#111]">
           <div
             ref={mediaTrackRef}
             onScroll={handleMediaScroll}
@@ -119,11 +99,15 @@ export default function PostDetailModal({
                       className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-w-full"
                     />
                   ) : (
-                    <img
+                    <Image
                       src={item.url}
                       alt={post.title + " - " + (index + 1)}
+                      width={1600}
+                      height={1200}
+                      quality={75}
+                      sizes="(min-width: 640px) 408px, 100vw"
+                      priority={index === 0}
                       loading="eager"
-                      decoding="async"
                       draggable={false}
                       className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-w-full"
                     />
