@@ -439,6 +439,7 @@ export default function InstagramWidget({
           username={activeProfileData.username
             ? "@" + activeProfileData.username
             : activeProfileData.displayName}
+          avatarUrl={activeProfileData.avatarUrl}
           onClose={() => setStoriesOpen(false)}
         />
       )}
