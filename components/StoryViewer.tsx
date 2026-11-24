@@ -14,6 +14,7 @@ interface StorySlide {
 interface StoryViewerProps {
   posts: NotionPost[];
   username: string;
+  avatarUrl: string;
   onClose: () => void;
 }
 
@@ -22,6 +23,7 @@ const IMAGE_DURATION = 6000;
 export default function StoryViewer({
   posts,
   username,
+  avatarUrl,
   onClose,
 }: StoryViewerProps) {
   const slides = useMemo<StorySlide[]>(() => {
@@ -134,8 +136,15 @@ export default function StoryViewer({
 
         <div className="absolute inset-x-4 top-8 z-20 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-2 text-white">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-white/15 text-xs font-semibold">
-              {username.slice(0, 1).toUpperCase()}
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/80 bg-white">
+              <Image
+                src={avatarUrl}
+                alt={username}
+                width={34}
+                height={34}
+                unoptimized
+                className="h-full w-full rounded-full object-contain"
+              />
             </div>
             <div className="min-w-0">
               <p className="truncate text-[12px] font-semibold">{username}</p>
