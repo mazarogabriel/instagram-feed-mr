@@ -26,6 +26,11 @@ export default function GridCell({ post, onClick }: GridCellProps) {
   const [imgError, setImgError] = useState(false);
   const statusColor = post.status ? STATUS_COLORS[post.status] ?? "bg-gray-400" : null;
   const hasVideo = post.media?.some((asset) => asset.kind === "video") ?? false;
+  const previewVideo =
+    post.media?.find((asset) => asset.kind === "video") &&
+    !(post.media?.some((asset) => asset.kind === "image") ?? false)
+      ? post.media.find((asset) => asset.kind === "video")
+      : null;
   const mediaCount = post.media?.length ?? 0;
 
   return (
@@ -38,7 +43,16 @@ export default function GridCell({ post, onClick }: GridCellProps) {
       onMouseLeave={() => setHover(false)}
     >
       <div className="grid-image">
-        {post.thumbnail && !imgError ? (
+        {previewVideo ? (
+          <video
+            src={previewVideo.url}
+            autoPlay
+            muted
+            loop
+            playsInline
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        ) : post.thumbnail && !imgError ? (
           <Image
             src={post.thumbnail}
             alt={post.title}
