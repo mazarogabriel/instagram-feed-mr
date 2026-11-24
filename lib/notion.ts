@@ -185,7 +185,8 @@ function normalizeLineBreaks(value: string): string {
 function cleanCaption(value: string): string | null {
   let caption = normalizeLineBreaks(value)
     .replace(/^Legenda\s*:?\s*/i, "")
-    .replace(/^ᴾᵀ⁻ᴱᴺᴳ\s*/i, "")
+    .replace(/[ \t]*ᴾᵀ⁻ᴱᴺᴳ[ \t]*/g, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 
   const editorialBoundary =

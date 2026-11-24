@@ -160,13 +160,13 @@ export default function StoryViewer({
           type="button"
           aria-label="Story anterior"
           onClick={previous}
-          className="absolute inset-y-24 left-0 z-10 w-[22%] cursor-pointer"
+          className="absolute inset-y-24 left-0 z-10 w-1/2 cursor-pointer"
         />
         <button
           type="button"
           aria-label="Próximo story"
           onClick={next}
-          className="absolute inset-y-24 right-0 z-10 w-[22%] cursor-pointer"
+          className="absolute inset-y-24 right-0 z-10 w-1/2 cursor-pointer"
         />
 
         <div className="absolute inset-x-4 bottom-5 z-20 text-white">
