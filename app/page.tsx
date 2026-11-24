@@ -40,8 +40,13 @@ export default async function HomePage() {
   }
 
   return (
-    <main className="w-full min-h-screen bg-white">
-      <InstagramWidget initialPosts={initialPosts} profile={profile} highlights={highlights} initialError={initialError} />
+    <main className="min-h-screen w-full bg-[#f3f2ef] px-3 py-4 sm:px-6 sm:py-8 flex justify-center">
+      <InstagramWidget
+        initialPosts={initialPosts}
+        profile={profile}
+        highlights={highlights}
+        initialError={initialError}
+      />
     </main>
   );
 }
