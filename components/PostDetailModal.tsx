@@ -75,7 +75,7 @@ export default function PostDetailModal({
               alt={post.title}
               loading="eager"
               decoding="async"
-              className="block h-auto w-auto max-h-[48vh] max-w-full object-contain sm:max-h-[92vh]"
+              className="block h-auto w-full max-w-full object-contain sm:h-[92vh] sm:w-auto sm:max-h-[92vh]"
             />
           ) : (
             <div className="flex min-h-[220px] w-full items-center justify-center p-8 text-center text-sm text-[#77736d]">
