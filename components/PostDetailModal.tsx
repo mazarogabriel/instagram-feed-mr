@@ -313,7 +313,14 @@ export default function PostDetailModal({
             </p>
           </div>
 
-          <div className={"border-t px-5 py-3 " + (isReel ? "border-white/15 sm:border-[#efefef]" : "border-[#efefef]")}>
+          <div
+            className={
+              "border-t px-5 py-3 " +
+              (isReel
+                ? "border-[#efefef] " + (!detailsExpanded ? "hidden sm:block" : "")
+                : "border-[#efefef]")
+            }
+          >
             <a
               href={post.pageUrl}
               target="_blank"
