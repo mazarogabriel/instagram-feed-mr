@@ -85,7 +85,7 @@ async function queryDataSource(
   startCursor?: string
 ): Promise<DataSourceQueryResponse> {
   const companyId = PROFILE_COMPANY_IDS[profile];
-  const filters = [
+  const filters: Record<string, unknown>[] = [
     {
       property: "Empresa",
       relation: { contains: companyId },
@@ -105,7 +105,7 @@ async function queryDataSource(
     filters.push({
       property: "Status",
       status: { equals: "Publicado" },
-    } as (typeof filters)[number]);
+    });
   }
 
   const response = await fetch(
