@@ -469,8 +469,9 @@ export async function fetchPostDetails(
 
   const page = (await pageResponse.json()) as NotionPage;
   const companyId = PROFILE_COMPANY_IDS[profile];
+  const normalizeId = (value: string) => value.replace(/-/g, "").toLowerCase();
   const belongsToProfile = (page.properties["Empresa"]?.relation ?? []).some(
-    (relation) => relation.id === companyId
+    (relation) => normalizeId(relation.id) === normalizeId(companyId)
   );
 
   if (!belongsToProfile) {
