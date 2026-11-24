@@ -32,6 +32,7 @@ type NotionProperty = {
 type NotionPage = {
   id: string;
   url?: string;
+  last_edited_time?: string;
   object: "page";
   properties: Record<string, NotionProperty>;
 };
@@ -96,8 +97,16 @@ async function queryDataSource(
           select: { equals: "Stories" },
         }
       : {
-          property: "Rede Social",
-          multi_select: { contains: "Instagram" },
+          or: [
+            {
+              property: "Rede Social",
+              multi_select: { contains: "Instagram" },
+            },
+            {
+              property: "Rede Social",
+              multi_select: { is_empty: true },
+            },
+          ],
         },
   ];
 
@@ -392,19 +401,43 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export async function fetchPosts(profile: ProfileKey = "mr"): Promise<NotionPost[]> {
+async function fetchProfilePages(profile: ProfileKey): Promise<NotionPage[]> {
   const [instagramPages, publishedStoryPages] = await Promise.all([
     queryAllPages(profile, false),
     queryAllPages(profile, true),
   ]);
 
-  // Some published Story entries do not have Instagram selected in Rede Social.
-  // Merge the two result sets by page id so each Story appears only once.
+  // Merge Instagram posts (including untagged network entries) and published
+  // Stories by page id so each Notion page appears only once.
   const pageMap = new Map<string, NotionPage>();
   for (const page of instagramPages) pageMap.set(page.id, page);
   for (const page of publishedStoryPages) pageMap.set(page.id, page);
-  const pages = Array.from(pageMap.values());
+  return Array.from(pageMap.values());
+}
 
+function createRevision(pages: NotionPage[]): string {
+  return pages
+    .map((page) => [
+      page.id,
+      page.last_edited_time ?? "",
+      page.properties["Status"]?.status?.name ?? "",
+      page.properties["Tipo/Formato"]?.select?.name ?? "",
+      page.properties["Data de Publicação"]?.date?.start ?? "",
+    ].join(":"))
+    .sort()
+    .join("|");
+}
+
+export async function fetchPostsRevision(profile: ProfileKey): Promise<string> {
+  const pages = await fetchProfilePages(profile);
+  return createRevision(pages);
+}
+
+export async function fetchPostsSnapshot(
+  profile: ProfileKey = "mr"
+): Promise<{ posts: NotionPost[]; revision: string }> {
+  const pages = await fetchProfilePages(profile);
+  const revision = createRevision(pages);
   const token = getToken();
   const posts = await mapWithConcurrency(pages, 3, async (item) => {
     const propertyMedia = extractPropertyMedia(item.properties);
@@ -443,10 +476,16 @@ export async function fetchPosts(profile: ProfileKey = "mr"): Promise<NotionPost
     };
   });
 
-  return posts.sort((a, b) => {
+  const sortedPosts = posts.sort((a, b) => {
     if (!a.publishDate && !b.publishDate) return 0;
     if (!a.publishDate) return 1;
     if (!b.publishDate) return -1;
     return b.publishDate.localeCompare(a.publishDate);
   });
+
+  return { posts: sortedPosts, revision };
+}
+
+export async function fetchPosts(profile: ProfileKey = "mr"): Promise<NotionPost[]> {
+  return (await fetchPostsSnapshot(profile)).posts;
 }
