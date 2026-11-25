@@ -172,6 +172,14 @@ export default function StoryViewer({
     };
   }, [activeIndex, current, isPaused, remainingTime, isLoadingStories]);
 
+  useEffect(() => {
+    if (!isLoadingStories && !isPaused && current?.media?.kind === "video") {
+      void videoRef.current?.play().catch(() => {
+        // Browser autoplay policies may require a manual tap.
+      });
+    }
+  }, [current, isLoadingStories, isPaused]);
+
   if (!current) return null;
 
   return (
@@ -189,11 +197,15 @@ export default function StoryViewer({
               ref={videoRef}
               key={current.media.url}
               src={current.media.url}
-              autoPlay
+              autoPlay={!isLoadingStories && !isPaused}
               muted
               playsInline
-              onEnded={next}
-              onError={next}
+              onEnded={() => {
+                if (!isLoadingStories) next();
+              }}
+              onError={() => {
+                if (!isLoadingStories) next();
+              }}
               className="h-full w-full object-contain"
             />
           ) : current.media?.url ? (
