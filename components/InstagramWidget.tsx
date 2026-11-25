@@ -402,13 +402,28 @@ export default function InstagramWidget({
       preloadingProfiles.current[profileKey] = true;
 
       try {
-        const candidates = [...(postsByProfile[profileKey] ?? [])]
+        const newestFirst = [...(postsByProfile[profileKey] ?? [])]
           .filter((post) => post.status === "Publicado" || post.status === "Concluído")
           .sort((a, b) => {
             const dateA = a.publishDate ? new Date(a.publishDate).getTime() : 0;
             const dateB = b.publishDate ? new Date(b.publishDate).getTime() : 0;
             return dateB - dateA;
           });
+
+        // Priority order: newest post first, then every published Story,
+        // then all remaining posts from newest to oldest.
+        const firstPost = newestFirst.slice(0, 1);
+        const publishedStories = newestFirst.filter(
+          (post) => post.status === "Publicado" && post.format === "Stories"
+        );
+        const priorityIds = new Set(
+          [...firstPost, ...publishedStories].map((post) => post.id)
+        );
+        const candidates = [
+          ...firstPost,
+          ...publishedStories.filter((post) => !firstPost.some((first) => first.id === post.id)),
+          ...newestFirst.filter((post) => !priorityIds.has(post.id)),
+        ];
 
         for (let index = 0; index < candidates.length && !cancelled; index += MEDIA_BATCH_SIZE) {
           const batch = candidates
