@@ -38,7 +38,10 @@ export default function GridCell({ post, onClick }: GridCellProps) {
     <button
       type="button"
       aria-label={"Abrir publicação: " + post.title}
-      className="group relative block w-full cursor-pointer select-none text-left"
+      className={cn(
+        "group relative block w-full cursor-pointer select-none text-left transition-opacity duration-200",
+        post.status === "Concluído" ? "opacity-70" : "opacity-100"
+      )}
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
