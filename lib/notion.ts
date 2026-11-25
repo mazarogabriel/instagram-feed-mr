@@ -449,28 +449,11 @@ function dedupeMedia(media: StoryMedia[]): StoryMedia[] {
   });
 }
 
-export async function fetchPostDetails(
-  profile: ProfileKey,
-  pageId: string
+async function fetchDetailsFromPage(
+  page: NotionPage,
+  pageId: string,
+  token: string
 ): Promise<{ media: StoryMedia[]; caption: string | null }> {
-  if (!/^[0-9a-f-]{32,36}$/i.test(pageId)) {
-    throw new Error("ID de publicação inválido.");
-  }
-
-  const token = getToken();
-
-  // Validate against the same company-scoped data-source query used by the
-  // feed. The individual Notion page endpoint can return relation properties
-  // in a partial form, even when the data-source query has the relation.
-  const page = (await fetchCompanyPages(profile)).find(
-    (candidate) => candidate.id.replace(/-/g, "").toLowerCase() ===
-      pageId.replace(/-/g, "").toLowerCase()
-  );
-
-  if (!page) {
-    throw new Error("Esta publicação não pertence ao perfil selecionado.");
-  }
-
   const propertyMedia = extractPropertyMedia(page.properties);
   const propertyCaption = cleanCaption(
     richTextToString(page.properties["Legenda (texto)"]?.rich_text)
@@ -483,6 +466,59 @@ export async function fetchPostDetails(
     media,
     caption: propertyCaption ?? extractCaptionFromBody(body.textBlocks),
   };
+}
+
+function normalizePageId(value: string): string {
+  return value.replace(/-/g, "").toLowerCase();
+}
+
+export async function fetchPostsDetails(
+  profile: ProfileKey,
+  pageIds: string[]
+): Promise<Record<string, { media: StoryMedia[]; caption: string | null }>> {
+  if (!Array.isArray(pageIds) || pageIds.length === 0 || pageIds.length > 8) {
+    throw new Error("Informe entre 1 e 8 publicações por lote.");
+  }
+
+  if (pageIds.some((id) => !/^[0-9a-f-]{32,36}$/i.test(id))) {
+    throw new Error("Um ou mais IDs de publicação são inválidos.");
+  }
+
+  const token = getToken();
+  // One company-scoped query validates every page in this batch instead of
+  // repeating the full data-source query for every post.
+  const pages = await fetchCompanyPages(profile);
+  const pageMap = new Map(
+    pages.map((page) => [normalizePageId(page.id), page] as const)
+  );
+
+  const requested = pageIds.map((id) => ({
+    requestedId: id,
+    page: pageMap.get(normalizePageId(id)),
+  }));
+
+  if (requested.some((item) => !item.page)) {
+    throw new Error("Uma ou mais publicações não pertencem ao perfil selecionado.");
+  }
+
+  const details = await mapWithConcurrency(
+    requested,
+    2,
+    async ({ requestedId, page }) => {
+      const result = await fetchDetailsFromPage(page as NotionPage, (page as NotionPage).id, token);
+      return [requestedId, result] as const;
+    }
+  );
+
+  return Object.fromEntries(details);
+}
+
+export async function fetchPostDetails(
+  profile: ProfileKey,
+  pageId: string
+): Promise<{ media: StoryMedia[]; caption: string | null }> {
+  const results = await fetchPostsDetails(profile, [pageId]);
+  return results[pageId];
 }
 
 export async function fetchPostsSnapshot(
