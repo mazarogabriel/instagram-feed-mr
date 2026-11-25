@@ -15,6 +15,7 @@ interface StoryViewerProps {
   posts: NotionPost[];
   username: string;
   avatarUrl: string;
+  profileKey: "mr" | "lab";
   onClose: () => void;
 }
 
@@ -24,10 +25,72 @@ export default function StoryViewer({
   posts,
   username,
   avatarUrl,
+  profileKey,
   onClose,
 }: StoryViewerProps) {
+  const postsRef = useRef(posts);
+  postsRef.current = posts;
+  const postIdsKey = posts.map((post) => post.id).join("|");
+  const [storyPosts, setStoryPosts] = useState(posts);
+  const [isLoadingStories, setIsLoadingStories] = useState(false);
+
+  // Every published Stories page can contain several media blocks. Fetch all
+  // of them on entry, then turn each image/video into its own Story slide.
+  useEffect(() => {
+    let cancelled = false;
+    const sourcePosts = postsRef.current;
+
+    setStoryPosts(sourcePosts);
+    setIsLoadingStories(sourcePosts.length > 0);
+
+    const loadAllStoryMedia = async () => {
+      const expandedPosts = await Promise.all(
+        sourcePosts.map(async (post) => {
+          try {
+            const response = await fetch(
+              "/api/posts/" + post.id + "/media?profile=" + profileKey,
+              {
+                cache: "no-store",
+                headers: {
+                  "Cache-Control": "no-cache, no-store",
+                  Pragma: "no-cache",
+                },
+              }
+            );
+            if (!response.ok) return post;
+
+            const data = await response.json();
+            if (!Array.isArray(data.media) || data.media.length === 0) {
+              return post;
+            }
+
+            return {
+              ...post,
+              media: data.media as StoryMedia[],
+              caption: data.caption ?? post.caption,
+            };
+          } catch {
+            // Keep the first thumbnail as a fallback if one page fails.
+            return post;
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setStoryPosts(expandedPosts);
+        setIsLoadingStories(false);
+      }
+    };
+
+    void loadAllStoryMedia();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [postIdsKey, profileKey]);
+
   const slides = useMemo<StorySlide[]>(() => {
-    return posts.flatMap((post) => {
+    return storyPosts.flatMap((post) => {
       const assets = post.media?.length
         ? post.media
         : post.thumbnail
@@ -36,7 +99,7 @@ export default function StoryViewer({
 
       return assets.map((media) => ({ post, media }));
     });
-  }, [posts]);
+  }, [storyPosts]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -95,7 +158,7 @@ export default function StoryViewer({
   }, [activeIndex]);
 
   useEffect(() => {
-    if (!current || current.media?.kind === "video" || isPaused) {
+    if (!current || isLoadingStories || current.media?.kind === "video" || isPaused) {
       timerStartedAt.current = null;
       return;
     }
@@ -107,7 +170,7 @@ export default function StoryViewer({
       window.clearTimeout(timer);
       timerStartedAt.current = null;
     };
-  }, [activeIndex, current, isPaused, remainingTime]);
+  }, [activeIndex, current, isPaused, remainingTime, isLoadingStories]);
 
   if (!current) return null;
 
@@ -149,6 +212,14 @@ export default function StoryViewer({
             </div>
           )}
         </div>
+
+        {isLoadingStories && (
+          <div className="absolute inset-x-0 top-16 z-20 flex justify-center">
+            <span className="rounded-full bg-black/45 px-3 py-1 text-[10px] font-medium text-white/90 backdrop-blur-sm">
+              Carregando sequência de Stories…
+            </span>
+          </div>
+        )}
 
         <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-black/65 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/65 to-transparent" />
