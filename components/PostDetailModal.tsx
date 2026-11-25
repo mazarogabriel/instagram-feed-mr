@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import { optimizedMediaUrl } from "@/lib/media-url";
 import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
@@ -31,29 +31,31 @@ export default function PostDetailModal({
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const mediaTrackRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef<number | null>(null);
   const isReel = post.format?.trim().toLocaleLowerCase("pt-BR") === "reels";
+  const currentMedia = media[activeIndex];
 
   const goToMedia = (index: number) => {
     const safeIndex = Math.max(0, Math.min(media.length - 1, index));
-    mediaTrackRef.current?.scrollTo({
-      left: safeIndex * (mediaTrackRef.current?.clientWidth ?? 0),
-      behavior: "smooth",
-    });
     setActiveIndex(safeIndex);
   };
 
-  const handleMediaScroll = () => {
-    const track = mediaTrackRef.current;
-    if (!track || !track.clientWidth) return;
-    const nextIndex = Math.round(track.scrollLeft / track.clientWidth);
-    setActiveIndex(Math.max(0, Math.min(media.length - 1, nextIndex)));
+  const handleSwipeStart = (event: TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = event.changedTouches[0]?.clientX ?? null;
+  };
+
+  const handleSwipeEnd = (event: TouchEvent<HTMLDivElement>) => {
+    if (touchStartX.current === null) return;
+    const delta = (event.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(delta) < 45) return;
+    goToMedia(activeIndex + (delta < 0 ? 1 : -1));
   };
 
   useEffect(() => {
     setActiveIndex(0);
     setDetailsExpanded(false);
-    mediaTrackRef.current?.scrollTo({ left: 0, behavior: "auto" });
+    touchStartX.current = null;
   }, [post.id]);
 
   useEffect(() => {
@@ -86,74 +88,59 @@ export default function PostDetailModal({
         aria-modal="true"
         aria-label={"Publicação: " + post.title}
         className={
-          "relative flex w-full flex-col overflow-hidden shadow-2xl " +
+          "relative flex w-full flex-col shadow-2xl " +
           (isReel
-            ? "h-[100dvh] max-h-[100dvh] max-w-none rounded-none bg-black sm:h-[92vh] sm:max-h-[92vh] sm:max-w-[980px] sm:flex-row sm:rounded-2xl"
-            : "max-h-[92vh] max-w-[850px] rounded-2xl bg-white sm:flex-row")
+            ? "h-[100dvh] max-h-[100dvh] max-w-none overflow-hidden rounded-none bg-black sm:h-[92vh] sm:max-h-[92vh] sm:max-w-[980px] sm:flex-row sm:rounded-2xl"
+            : "max-h-[92vh] max-w-[850px] overflow-y-auto rounded-2xl bg-white sm:w-auto sm:max-w-[96vw] sm:flex-row sm:items-start sm:overflow-hidden")
         }
       >
         <div
+          onTouchStart={handleSwipeStart}
+          onTouchEnd={handleSwipeEnd}
           className={
-            "relative flex w-full flex-shrink-0 items-center justify-center overflow-hidden " +
+            "relative flex flex-shrink-0 items-start justify-center overflow-hidden " +
             (isReel
-              ? "h-[calc(100dvh-116px)] max-h-[calc(100dvh-116px)] bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
-              : "max-h-[55vh] self-start overflow-y-auto bg-white sm:h-[92vh] sm:max-h-none sm:w-[48%] sm:overflow-hidden sm:bg-[#111]")
+              ? "h-[calc(100dvh-116px)] max-h-[calc(100dvh-116px)] w-full bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
+              : "w-full self-start bg-white sm:h-auto sm:w-auto sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)]")
           }
+          style={{ touchAction: "pan-y" }}
         >
-          <div
-            ref={mediaTrackRef}
-            onScroll={handleMediaScroll}
-            className={
-              "flex w-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden " +
-              (isReel ? "h-full items-center sm:h-full" : "sm:h-[92vh]")
-            }
-            style={{ touchAction: "pan-x pan-y" }}
-          >
-            {media.length > 0 ? (
-              media.map((item, index) => (
-                <div
-                  key={item.url + "-" + index}
-                  className={
-                    "flex w-full min-w-full flex-shrink-0 snap-center items-center justify-center " +
-                    (isReel ? "h-full" : "sm:h-[92vh]")
-                  }
-                >
-                  {item.kind === "video" ? (
-                    <video
-                      src={item.url}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className={
-                        isReel
-                          ? "block h-full w-full object-cover sm:object-cover"
-                          : "block h-auto max-h-[55vh] w-auto max-w-full object-contain sm:max-h-[92vh]"
-                      }
-                    />
-                  ) : (
-                    <img
-                      src={optimizedMediaUrl(item.url, 1200, 75)}
-                      alt={post.title + " - " + (index + 1)}
-                      loading="eager"
-                      decoding="async"
-                      draggable={false}
-                      className={
-                        isReel
-                          ? "block h-full w-full object-contain"
-                          : "block h-auto max-h-[55vh] w-auto max-w-full object-contain sm:max-h-[92vh]"
-                      }
-                    />
-                  )}
-                </div>
-              ))
+          {currentMedia ? (
+            currentMedia.kind === "video" ? (
+              <video
+                key={currentMedia.url}
+                src={currentMedia.url}
+                controls
+                playsInline
+                preload="metadata"
+                className={
+                  isReel
+                    ? "block h-full w-full object-cover"
+                    : "block h-auto w-full max-w-full object-contain sm:h-auto sm:w-auto sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)]"
+                }
+              />
             ) : (
-              <div className="flex min-h-[220px] w-full min-w-full items-center justify-center p-8 text-center text-sm text-[#77736d]">
-                {loadingMedia
-                  ? "Carregando imagens e vídeos…"
-                  : mediaError ?? "Nenhuma imagem ou vídeo cadastrado"}
-              </div>
-            )}
-          </div>
+              <img
+                key={currentMedia.url}
+                src={optimizedMediaUrl(currentMedia.url, 1200, 75)}
+                alt={post.title + " - " + (activeIndex + 1)}
+                loading="eager"
+                decoding="async"
+                draggable={false}
+                className={
+                  isReel
+                    ? "block h-full w-full object-contain"
+                    : "block h-auto w-full max-w-full object-contain sm:h-auto sm:w-auto sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)]"
+                }
+              />
+            )
+          ) : (
+            <div className="flex min-h-[220px] w-full items-center justify-center p-8 text-center text-sm text-[#77736d]">
+              {loadingMedia
+                ? "Carregando imagens e vídeos…"
+                : mediaError ?? "Nenhuma imagem ou vídeo cadastrado"}
+            </div>
+          )}
 
           {isReel && (
             <button
