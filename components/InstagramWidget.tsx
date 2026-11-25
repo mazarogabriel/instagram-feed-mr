@@ -2,9 +2,10 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import Image from "next/image";
-import type { NotionPost, Profile, Highlight, WidgetSettings } from "@/lib/types";
+import type { NotionPost, Profile, Highlight, WidgetSettings, StoryMedia } from "@/lib/types";
 import type { ProfileKey } from "@/lib/notion";
 import { sortPosts } from "@/lib/utils";
+import { optimizedMediaUrl } from "@/lib/media-url";
 import ProfileHeader from "./ProfileHeader";
 import Highlights from "./Highlights";
 import Toolbar from "./Toolbar";
@@ -20,6 +21,44 @@ interface InitialSnapshot {
   posts: NotionPost[];
   revision: string;
   error?: string;
+}
+
+interface CachedPostMedia {
+  media: StoryMedia[];
+  caption: string | null;
+  loadedAt: number;
+}
+
+const MEDIA_CACHE_TTL = 45 * 60 * 1000;
+const MEDIA_BATCH_SIZE = 4;
+
+function preloadImage(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const image = new window.Image();
+    image.decoding = "async";
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+    image.src = optimizedMediaUrl(url, 1200, 75);
+    if (image.complete) resolve();
+  });
+}
+
+async function preloadMediaAssets(media: StoryMedia[]): Promise<void> {
+  const images = media.filter((item) => item.kind === "image");
+  for (let index = 0; index < images.length; index += 2) {
+    await Promise.all(images.slice(index, index + 2).map((item) => preloadImage(item.url)));
+  }
+
+  // For video, fetch metadata only. Full video files can be very large and
+  // should stream when opened rather than silently consuming the user's data.
+  media
+    .filter((item) => item.kind === "video")
+    .forEach((item) => {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.src = item.url;
+      video.load();
+    });
 }
 
 interface InstagramWidgetProps {
@@ -90,6 +129,14 @@ export default function InstagramWidget({
   const [selectedPostLoading, setSelectedPostLoading] = useState(false);
   const [selectedPostError, setSelectedPostError] = useState<string | undefined>();
   const postDetailRequestSequence = useRef(0);
+  const postMediaCache = useRef<Record<ProfileKey, Map<string, CachedPostMedia>>>({
+    mr: new Map(),
+    lab: new Map(),
+  });
+  const preloadingProfiles = useRef<Record<ProfileKey, boolean>>({
+    mr: false,
+    lab: false,
+  });
   const [storiesOpen, setStoriesOpen] = useState(false);
   const [lastUpdatedByProfile, setLastUpdatedByProfile] = useState<Record<ProfileKey, Date | null>>({
     mr: initialProfiles.mr.error ? null : new Date(),
@@ -166,6 +213,9 @@ export default function InstagramWidget({
       }
 
       if (requestId === requestSequence.current[profileKey]) {
+        // A changed Notion revision may have new media URLs or expired file
+        // links. Discard this profile's media cache and let the queue rebuild it.
+        postMediaCache.current[profileKey].clear();
         setPostsByProfile((current) => ({ ...current, [profileKey]: [...data.posts] }));
         currentRevisions.current[profileKey] = data.revision ?? "";
         setLastUpdatedByProfile((current) => ({ ...current, [profileKey]: new Date() }));
@@ -269,10 +319,18 @@ export default function InstagramWidget({
   const openPost = (post: NotionPost) => {
     const requestId = ++postDetailRequestSequence.current;
     const profileKey = activeProfile;
+    const cached = postMediaCache.current[profileKey].get(post.id);
+    const cacheIsFresh = cached && Date.now() - cached.loadedAt < MEDIA_CACHE_TTL;
 
-    setSelectedPost(post);
-    setSelectedPostLoading(true);
+    setSelectedPost(
+      cacheIsFresh
+        ? { ...post, media: cached.media, caption: cached.caption ?? post.caption }
+        : post
+    );
+    setSelectedPostLoading(!cacheIsFresh);
     setSelectedPostError(undefined);
+
+    if (cacheIsFresh) return;
 
     void (async () => {
       try {
@@ -292,23 +350,31 @@ export default function InstagramWidget({
           throw new Error(data.error ?? "Não foi possível carregar as mídias.");
         }
 
-        if (
-          requestId === postDetailRequestSequence.current &&
-          Array.isArray(data.media)
-        ) {
-          setSelectedPost((current) =>
-            current?.id === post.id
-              ? {
-                  ...current,
-                  media: data.media,
-                  thumbnail:
-                    data.media.find((asset: { kind: string; url: string }) => asset.kind === "image")?.url ??
-                    data.media[0]?.url ??
-                    current.thumbnail,
-                  caption: data.caption ?? current.caption,
-                }
-              : current
-          );
+        if (Array.isArray(data.media)) {
+          const media = data.media as StoryMedia[];
+          const caption = data.caption ?? post.caption;
+          postMediaCache.current[profileKey].set(post.id, {
+            media,
+            caption,
+            loadedAt: Date.now(),
+          });
+
+          if (requestId === postDetailRequestSequence.current) {
+            setSelectedPost((current) =>
+              current?.id === post.id
+                ? {
+                    ...current,
+                    media,
+                    thumbnail:
+                      media.find((asset) => asset.kind === "image")?.url ??
+                      media[0]?.url ??
+                      current.thumbnail,
+                    caption,
+                  }
+                : current
+            );
+            void preloadMediaAssets(media);
+          }
         }
       } catch (error) {
         if (requestId === postDetailRequestSequence.current) {
@@ -323,6 +389,104 @@ export default function InstagramWidget({
       }
     })();
   };
+
+  // After the thumbnails have rendered, progressively fetch full media
+  // metadata for both profiles. Each profile is processed newest to oldest,
+  // in small batches, and image downloads are limited to two at a time.
+  useEffect(() => {
+    let cancelled = false;
+    let started = false;
+
+    const prefetchProfile = async (profileKey: ProfileKey) => {
+      if (preloadingProfiles.current[profileKey]) return;
+      preloadingProfiles.current[profileKey] = true;
+
+      try {
+        const candidates = [...(postsByProfile[profileKey] ?? [])]
+          .filter((post) => post.status === "Publicado" || post.status === "Concluído")
+          .sort((a, b) => {
+            const dateA = a.publishDate ? new Date(a.publishDate).getTime() : 0;
+            const dateB = b.publishDate ? new Date(b.publishDate).getTime() : 0;
+            return dateB - dateA;
+          });
+
+        for (let index = 0; index < candidates.length && !cancelled; index += MEDIA_BATCH_SIZE) {
+          const batch = candidates
+            .slice(index, index + MEDIA_BATCH_SIZE)
+            .filter((post) => {
+              const cached = postMediaCache.current[profileKey].get(post.id);
+              return !cached || Date.now() - cached.loadedAt >= MEDIA_CACHE_TTL;
+            });
+
+          if (batch.length === 0) continue;
+
+          try {
+            const response = await fetch("/api/posts/media/batch", {
+              method: "POST",
+              cache: "no-store",
+              headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": "no-cache, no-store",
+                Pragma: "no-cache",
+              },
+              body: JSON.stringify({
+                profile: profileKey,
+                pageIds: batch.map((post) => post.id),
+              }),
+            });
+
+            if (!response.ok) continue;
+            const data = await response.json();
+            const results = data.results as Record<
+              string,
+              { media: StoryMedia[]; caption: string | null }
+            > | undefined;
+
+            if (!results || cancelled) continue;
+
+            // Store all metadata first, then download the actual image bytes
+            // in publication order before moving to older posts.
+            const mediaToPreload: StoryMedia[] = [];
+            for (const post of batch) {
+              const details = results[post.id];
+              if (!details || !Array.isArray(details.media)) continue;
+
+              postMediaCache.current[profileKey].set(post.id, {
+                media: details.media,
+                caption: details.caption ?? post.caption,
+                loadedAt: Date.now(),
+              });
+              mediaToPreload.push(...details.media);
+            }
+
+            await preloadMediaAssets(mediaToPreload);
+          } catch {
+            // A failed batch does not block the rest of the background queue.
+          }
+        }
+      } finally {
+        preloadingProfiles.current[profileKey] = false;
+      }
+    };
+
+    const startPrefetch = () => {
+      if (started || document.visibilityState !== "visible") return;
+      started = true;
+      void Promise.all([
+        prefetchProfile("mr"),
+        prefetchProfile("lab"),
+      ]);
+    };
+
+    const timer = window.setTimeout(startPrefetch, 1500);
+    document.addEventListener("visibilitychange", startPrefetch);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", startPrefetch);
+    };
+  }, [postsByProfile]);
 
   const activeConfig = profileConfigs[activeProfile];
   const activeProfileData = activeConfig.profile;
