@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
+import { optimizedMediaUrl } from "@/lib/media-url";
 import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
@@ -131,15 +131,11 @@ export default function PostDetailModal({
                       }
                     />
                   ) : (
-                    <Image
-                      src={item.url}
+                    <img
+                      src={optimizedMediaUrl(item.url, 1200, 75)}
                       alt={post.title + " - " + (index + 1)}
-                      width={1600}
-                      height={1200}
-                      quality={75}
-                      sizes="(min-width: 640px) 408px, 100vw"
-                      priority={index === 0}
                       loading="eager"
+                      decoding="async"
                       draggable={false}
                       className={
                         isReel
