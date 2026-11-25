@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, ExternalLink } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
+import { optimizedMediaUrl } from "@/lib/media-url";
 import { formatDate } from "@/lib/utils";
 
 interface StorySlide {
@@ -196,7 +197,7 @@ export default function StoryViewer({
             <video
               ref={videoRef}
               key={current.media.url}
-              src={current.media.url}
+              src={optimizedMediaUrl(current.media.url, 1200, 75)}
               autoPlay={!isLoadingStories && !isPaused}
               muted
               playsInline
