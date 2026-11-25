@@ -469,12 +469,21 @@ export default function InstagramWidget({
       }
     };
 
+    const waitAndPrefetchProfile = async (profileKey: ProfileKey) => {
+      // If an older prefetch cycle is finishing after a Notion refresh,
+      // wait for it to release the profile queue before starting the new one.
+      while (preloadingProfiles.current[profileKey] && !cancelled) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
+      if (!cancelled) await prefetchProfile(profileKey);
+    };
+
     const startPrefetch = () => {
       if (started || document.visibilityState !== "visible") return;
       started = true;
       void Promise.all([
-        prefetchProfile("mr"),
-        prefetchProfile("lab"),
+        waitAndPrefetchProfile("mr"),
+        waitAndPrefetchProfile("lab"),
       ]);
     };
 
