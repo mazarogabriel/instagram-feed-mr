@@ -10,7 +10,10 @@ create table if not exists public.team_members (
   created_at timestamptz not null default now()
 );
 
--- Team membership is an explicit allowlist. Users are not added automatically.\n-- Create each auth user in the Dashboard, then run the backfill below.\n\n-- Backfill users created before this migration (including the initial test user).
+-- Team membership is an explicit allowlist. Users are not added automatically.
+-- Create each auth user in the Dashboard, then run the backfill below.
+
+-- Backfill users created before this migration (including the initial test user).
 insert into public.team_members (user_id, email, display_name)
 select
   id,
@@ -118,7 +121,10 @@ create policy "Authors can delete their own comments"
   to authenticated
   using (user_id = auth.uid() and public.is_team_member());
 
-grant usage on schema public to authenticated;\ngrant select on public.team_members to authenticated;\nrevoke all on function public.is_team_member() from PUBLIC, anon;\ngrant execute on function public.is_team_member() to authenticated;
+grant usage on schema public to authenticated;
+grant select on public.team_members to authenticated;
+revoke all on function public.is_team_member() from PUBLIC, anon;
+grant execute on function public.is_team_member() to authenticated;
 grant select, insert, delete on public.post_likes to authenticated;
 grant select, insert, update, delete on public.post_comments to authenticated;
 
