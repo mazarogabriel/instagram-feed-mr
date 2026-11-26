@@ -15,6 +15,7 @@ import LoadingSkeleton from "./LoadingSkeleton";
 import StatusFilter from "./StatusFilter";
 import PostDetailModal from "./PostDetailModal";
 import StoryViewer from "./StoryViewer";
+import SessionBar from "./SessionBar";
 
 interface InitialSnapshot {
   posts: NotionPost[];
@@ -38,6 +39,7 @@ interface InstagramWidgetProps {
   initialProfiles: Record<ProfileKey, InitialSnapshot>;
   profile: Profile;
   highlights: Highlight[];
+  userEmail: string;
 }
 
 interface ProfileConfig {
@@ -57,6 +59,7 @@ export default function InstagramWidget({
   initialProfiles,
   profile,
   highlights,
+  userEmail,
 }: InstagramWidgetProps) {
   const profileConfigs: Record<ProfileKey, ProfileConfig> = {
     mr: {
