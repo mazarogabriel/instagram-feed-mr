@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Heart, Send, Trash2 } from "lucide-react";
+import { Heart, Send, Pencil, Check, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 type LikeRow = { actor_id: string; display_name: string };
@@ -26,6 +26,8 @@ export default function PostFeedback({
   const [likes, setLikes] = useState<LikeRow[]>([]);
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [comment, setComment] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingBody, setEditingBody] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -101,17 +103,35 @@ export default function PostFeedback({
     setSaving(false);
   }
 
-  async function deleteComment(commentId: string) {
-    const { error: deleteError } = await supabase.from("post_comments_by_name")
-      .delete()
+  function startEditingComment(item: CommentRow) {
+    setEditingCommentId(item.id);
+    setEditingBody(item.body);
+    setError("");
+  }
+
+  function cancelEditingComment() {
+    setEditingCommentId(null);
+    setEditingBody("");
+  }
+
+  async function saveEditedComment(commentId: string) {
+    const body = editingBody.trim();
+    if (!body || body.length > 2000) return;
+
+    setSaving(true);
+    setError("");
+    const { error: updateError } = await supabase.from("post_comments_by_name")
+      .update({ body })
       .eq("id", commentId)
       .eq("actor_id", actorId);
 
-    if (deleteError) {
-      setError("Não foi possível excluir o comentário.");
+    if (updateError) {
+      setError("Não foi possível atualizar o comentário.");
     } else {
+      cancelEditingComment();
       await loadFeedback();
     }
+    setSaving(false);
   }
 
   return (
@@ -170,19 +190,50 @@ export default function PostFeedback({
                             })}
                           </span>
                         </p>
-                        <p className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-5 text-[#262626]">
-                          {item.body}
-                        </p>
+                        {editingCommentId === item.id ? (
+                          <div className="mt-2 space-y-2">
+                            <textarea
+                              value={editingBody}
+                              onChange={(event) => setEditingBody(event.target.value)}
+                              rows={3}
+                              maxLength={2000}
+                              aria-label="Editar comentário"
+                              className="min-h-[64px] w-full resize-y rounded-lg border border-[#e6e3de] bg-white px-3 py-2 text-[12px] leading-5 text-[#262626] outline-none focus:border-[#99958e]"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={cancelEditingComment}
+                                disabled={saving}
+                                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[11px] text-[#77736d] hover:bg-white disabled:opacity-50"
+                              >
+                                <X size={12} /> Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void saveEditedComment(item.id)}
+                                disabled={saving || !editingBody.trim()}
+                                className="inline-flex items-center gap-1 rounded-full bg-[#262626] px-2.5 py-1.5 text-[11px] text-white hover:bg-[#444] disabled:opacity-50"
+                              >
+                                <Check size={12} /> Salvar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-5 text-[#262626]">
+                            {item.body}
+                          </p>
+                        )}
                       </div>
-                      {item.actor_id === actorId && (
+                      {item.actor_id === actorId && editingCommentId !== item.id && (
                         <button
                           type="button"
-                          onClick={() => void deleteComment(item.id)}
-                          aria-label="Excluir comentário"
-                          title="Excluir comentário"
-                          className="rounded-full p-1 text-[#99958e] hover:bg-white hover:text-[#a33f43]"
+                          onClick={() => startEditingComment(item)}
+                          aria-label="Editar comentário"
+                          title="Editar comentário"
+                          className="rounded-full p-1 text-[#99958e] hover:bg-white hover:text-[#4c4944]"
                         >
-                          <Trash2 size={13} />
+                          <Pencil size={13} />
                         </button>
                       )}
                     </div>
