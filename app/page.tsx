@@ -1,8 +1,6 @@
 import { fetchPostsSnapshot, type ProfileKey } from "@/lib/notion";
 import type { Profile, Highlight, NotionPost } from "@/lib/types";
 import InstagramWidget from "@/components/InstagramWidget";
-import LoginGate from "@/components/LoginGate";
-import { getTeamUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -64,16 +62,6 @@ async function loadInitialSnapshot(profile: ProfileKey): Promise<InitialSnapshot
 }
 
 export default async function HomePage() {
-  const user = await getTeamUser();
-
-  if (!user) {
-    return (
-      <main className="flex min-h-screen w-full items-center justify-center bg-[#f3f2ef] px-3 py-8 sm:px-6">
-        <LoginGate />
-      </main>
-    );
-  }
-
   const profile = getProfile();
   const highlights = getHighlights();
 
@@ -90,8 +78,6 @@ export default async function HomePage() {
         initialProfiles={{ mr, lab }}
         profile={profile}
         highlights={highlights}
-        userEmail={user.email ?? ""}
-        userId={user.id}
       />
     </main>
   );
