@@ -511,7 +511,7 @@ export default function InstagramWidget({
 
   return (
     <div className="w-full max-w-[430px] min-h-[780px] overflow-hidden rounded-[28px] border border-[#e8e6e2] bg-white shadow-[0_18px_55px_rgba(28,25,20,0.10)]">
-      <div className="flex items-center justify-center border-b border-[#efefef] bg-white px-3 py-3">
+      <div className="flex items-center justify-between gap-2 border-b border-[#efefef] bg-white px-3 py-3">
         <div className="inline-flex items-center rounded-full bg-[#f4f4f4] p-1">
           {(["mr", "lab"] as ProfileKey[]).map((profileKey) => {
             const config = profileConfigs[profileKey];
@@ -551,6 +551,7 @@ export default function InstagramWidget({
             );
           })}
         </div>
+        <SessionBar email={userEmail} />
       </div>
 
       {settings.showBio && (
