@@ -124,7 +124,7 @@ export default function PostDetailModal({
         >
           {media.length > 0 ? (
             <div
-              className="flex h-full items-start transition-transform duration-300 ease-out will-change-transform"
+              className="flex h-full flex-shrink-0 items-start transition-transform duration-300 ease-out will-change-transform"
               style={{
                 width: String(media.length * 100) + "%",
                 transform: "translate3d(-" + (activeIndex * 100 / media.length) + "%, 0, 0)",
