@@ -4,30 +4,27 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Heart, Send, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-type LikeRow = { user_id: string };
+type LikeRow = { actor_id: string; display_name: string };
 type CommentRow = {
   id: string;
-  user_id: string;
+  actor_id: string;
+  display_name: string;
   body: string;
   created_at: string;
-};
-type MemberRow = {
-  user_id: string;
-  display_name: string;
-  email: string;
 };
 
 export default function PostFeedback({
   postId,
-  userId,
+  actorId,
+  displayName,
 }: {
   postId: string;
-  userId: string;
+  actorId: string;
+  displayName: string;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [likes, setLikes] = useState<LikeRow[]>([]);
   const [comments, setComments] = useState<CommentRow[]>([]);
-  const [members, setMembers] = useState<Record<string, MemberRow>>({});
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -35,18 +32,15 @@ export default function PostFeedback({
 
   const loadFeedback = useCallback(async () => {
     setError("");
-    const [likesResult, commentsResult, membersResult] = await Promise.all([
-      supabase.from("post_likes").select("user_id").eq("post_id", postId),
-      supabase
-        .from("post_comments")
-        .select("id,user_id,body,created_at")
+    const [likesResult, commentsResult] = await Promise.all([
+      supabase.from("post_likes_by_name").select("actor_id,display_name").eq("post_id", postId),
+      supabase.from("post_comments_by_name")
+        .select("id,actor_id,display_name,body,created_at")
         .eq("post_id", postId)
         .order("created_at", { ascending: true }),
-      supabase.from("team_members").select("user_id,display_name,email"),
     ]);
 
-    const firstError =
-      likesResult.error ?? commentsResult.error ?? membersResult.error;
+    const firstError = likesResult.error ?? commentsResult.error;
     if (firstError) {
       setError("Não foi possível carregar as aprovações e os comentários.");
       setLoading(false);
@@ -55,11 +49,6 @@ export default function PostFeedback({
 
     setLikes((likesResult.data ?? []) as LikeRow[]);
     setComments((commentsResult.data ?? []) as CommentRow[]);
-    const memberMap: Record<string, MemberRow> = {};
-    for (const member of (membersResult.data ?? []) as MemberRow[]) {
-      memberMap[member.user_id] = member;
-    }
-    setMembers(memberMap);
     setLoading(false);
   }, [postId, supabase]);
 
@@ -67,15 +56,19 @@ export default function PostFeedback({
     void loadFeedback();
   }, [loadFeedback]);
 
-  const likedByMe = likes.some((like) => like.user_id === userId);
+  const likedByMe = likes.some((like) => like.actor_id === actorId);
 
   async function toggleLike() {
     setSaving(true);
     setError("");
 
     const result = likedByMe
-      ? await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", userId)
-      : await supabase.from("post_likes").insert({ post_id: postId, user_id: userId });
+      ? await supabase.from("post_likes_by_name").delete().eq("post_id", postId).eq("actor_id", actorId)
+      : await supabase.from("post_likes_by_name").insert({
+          post_id: postId,
+          actor_id: actorId,
+          display_name: displayName,
+        });
 
     if (result.error) {
       setError("Não foi possível registrar sua aprovação.");
@@ -92,9 +85,12 @@ export default function PostFeedback({
 
     setSaving(true);
     setError("");
-    const { error: insertError } = await supabase
-      .from("post_comments")
-      .insert({ post_id: postId, user_id: userId, body });
+    const { error: insertError } = await supabase.from("post_comments_by_name").insert({
+      post_id: postId,
+      actor_id: actorId,
+      display_name: displayName,
+      body,
+    });
 
     if (insertError) {
       setError("Não foi possível publicar o comentário.");
@@ -106,22 +102,16 @@ export default function PostFeedback({
   }
 
   async function deleteComment(commentId: string) {
-    const { error: deleteError } = await supabase
-      .from("post_comments")
+    const { error: deleteError } = await supabase.from("post_comments_by_name")
       .delete()
       .eq("id", commentId)
-      .eq("user_id", userId);
+      .eq("actor_id", actorId);
 
     if (deleteError) {
       setError("Não foi possível excluir o comentário.");
     } else {
       await loadFeedback();
     }
-  }
-
-  function memberName(id: string) {
-    const member = members[id];
-    return member?.display_name || member?.email || "Integrante da equipe";
   }
 
   return (
@@ -154,7 +144,7 @@ export default function PostFeedback({
           <p className="mt-3 text-[11px] text-[#77736d]">
             {likes.length === 0
               ? "Ainda sem aprovações."
-              : "Aprovado por " + likes.map((like) => memberName(like.user_id)).join(", ")}
+              : "Aprovado por " + likes.map((like) => like.display_name).join(", ")}
           </p>
 
           <div className="mt-6">
@@ -170,7 +160,7 @@ export default function PostFeedback({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-[11px] font-semibold text-[#4c4944]">
-                          {memberName(item.user_id)}
+                          {item.display_name}
                           <span className="ml-2 font-normal text-[#99958e]">
                             {new Date(item.created_at).toLocaleDateString("pt-BR", {
                               day: "2-digit",
@@ -184,7 +174,7 @@ export default function PostFeedback({
                           {item.body}
                         </p>
                       </div>
-                      {item.user_id === userId && (
+                      {item.actor_id === actorId && (
                         <button
                           type="button"
                           onClick={() => void deleteComment(item.id)}
