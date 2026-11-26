@@ -49,13 +49,13 @@ language sql
 stable
 security definer
 set search_path = ''
-as $
+as $team_member$
   select exists (
     select 1
     from public.team_members
     where user_id = auth.uid()
   );
-$$;
+$team_member$;
 
 alter table public.team_members enable row level security;
 alter table public.post_likes enable row level security;
@@ -118,7 +118,7 @@ create policy "Authors can delete their own comments"
   to authenticated
   using (user_id = auth.uid() and public.is_team_member());
 
-grant usage on schema public to authenticated;\ngrant select on public.team_members to authenticated;\nrevoke all on function public.is_team_member() from public, anon;\ngrant execute on function public.is_team_member() to authenticated;
+grant usage on schema public to authenticated;\ngrant select on public.team_members to authenticated;\nrevoke all on function public.is_team_member() from PUBLIC, anon;\ngrant execute on function public.is_team_member() to authenticated;
 grant select, insert, delete on public.post_likes to authenticated;
 grant select, insert, update, delete on public.post_comments to authenticated;
 
