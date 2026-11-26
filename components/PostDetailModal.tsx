@@ -11,7 +11,8 @@ import PostFeedback from "./PostFeedback";
 interface PostDetailModalProps {
   post: NotionPost;
   profileName: string;
-  userId: string;
+  actorId: string;
+  displayName: string;
   loadingMedia?: boolean;
   mediaError?: string;
   onClose: () => void;
@@ -20,7 +21,8 @@ interface PostDetailModalProps {
 export default function PostDetailModal({
   post,
   profileName,
-  userId,
+  actorId,
+  displayName,
   loadingMedia = false,
   mediaError,
   onClose,
@@ -441,7 +443,7 @@ export default function PostDetailModal({
             <p className={"whitespace-pre-wrap text-[13px] leading-[1.75] " + "text-[#262626]"}>
               {post.caption || "A legenda ainda não foi preenchida nesta publicação."}
             </p>
-            <PostFeedback postId={post.id} userId={userId} />
+            <PostFeedback postId={post.id} actorId={actorId} displayName={displayName} />
           </div>
 
           <div
