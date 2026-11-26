@@ -206,7 +206,7 @@ export default function PostDetailModal({
         aria-modal="true"
         aria-label={"Publicação: " + post.title}
         className={
-          "relative flex w-full flex-col shadow-2xl " +
+          "modal-scrollbar-hidden relative flex w-full flex-col shadow-2xl " +
           (isReel
             ? "h-[100dvh] max-h-[100dvh] max-w-none overflow-hidden rounded-none bg-black sm:h-[92vh] sm:max-h-[92vh] sm:max-w-[980px] sm:flex-row sm:rounded-2xl"
             : "h-[100dvh] max-h-[100dvh] max-w-none overflow-y-auto rounded-none bg-white sm:h-auto sm:max-h-[92vh] sm:max-w-[850px] sm:rounded-2xl sm:overflow-y-auto sm:w-auto sm:max-w-[96vw] sm:flex-row sm:items-start sm:overflow-hidden")
