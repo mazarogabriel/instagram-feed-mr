@@ -91,6 +91,7 @@ export default async function HomePage() {
         profile={profile}
         highlights={highlights}
         userEmail={user.email ?? ""}
+        userId={user.id}
       />
     </main>
   );
