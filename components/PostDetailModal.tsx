@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { optimizedMediaUrl } from "@/lib/media-url";
 import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
@@ -31,7 +31,7 @@ export default function PostDetailModal({
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const touchStartX = useRef<number | null>(null);
+  const pointerStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const isReel = post.format?.trim().toLocaleLowerCase("pt-BR") === "reels";
   const currentMedia = media[activeIndex];
 
@@ -40,22 +40,36 @@ export default function PostDetailModal({
     setActiveIndex(safeIndex);
   };
 
-  const handleSwipeStart = (event: TouchEvent<HTMLDivElement>) => {
-    touchStartX.current = event.changedTouches[0]?.clientX ?? null;
+  const handleSwipeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    if (event.target instanceof Element && event.target.closest("button, a")) return;
+
+    pointerStart.current = {
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const handleSwipeEnd = (event: TouchEvent<HTMLDivElement>) => {
-    if (touchStartX.current === null) return;
-    const delta = (event.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
-    touchStartX.current = null;
-    if (Math.abs(delta) < 45) return;
-    goToMedia(activeIndex + (delta < 0 ? 1 : -1));
+  const handleSwipeEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = pointerStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    pointerStart.current = null;
+
+    // Ignore vertical scrolling and short taps. Horizontal dragging works
+    // with both touch and mouse, then the track animates to the next slide.
+    if (Math.abs(deltaX) < 45 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
+    goToMedia(activeIndex + (deltaX < 0 ? 1 : -1));
   };
 
   useEffect(() => {
     setActiveIndex(0);
     setDetailsExpanded(false);
-    touchStartX.current = null;
+    pointerStart.current = null;
   }, [post.id]);
 
   useEffect(() => {
@@ -95,45 +109,62 @@ export default function PostDetailModal({
         }
       >
         <div
-          onTouchStart={handleSwipeStart}
-          onTouchEnd={handleSwipeEnd}
+          onPointerDown={handleSwipeStart}
+          onPointerUp={handleSwipeEnd}
+          onPointerCancel={() => {
+            pointerStart.current = null;
+          }}
           className={
-            "relative flex flex-shrink-0 items-start justify-center overflow-hidden " +
+            "relative flex flex-shrink-0 items-center justify-center overflow-hidden " +
             (isReel
               ? "h-[calc(100dvh-116px)] max-h-[calc(100dvh-116px)] w-full bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
-              : "w-full self-start bg-white sm:h-auto sm:w-auto sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)]")
+              : "w-full self-start bg-white sm:h-auto sm:w-[48%] sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)]")
           }
-          style={{ touchAction: "pan-y" }}
+          style={{ touchAction: "pan-y", cursor: media.length > 1 ? "grab" : "default" }}
         >
-          {currentMedia ? (
-            currentMedia.kind === "video" ? (
-              <video
-                key={currentMedia.url}
-                src={currentMedia.url}
-                controls
-                playsInline
-                preload="metadata"
-                className={
-                  isReel
-                    ? "block h-full w-full object-cover"
-                    : "block h-auto w-full max-w-full object-contain sm:h-auto sm:w-auto sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)]"
-                }
-              />
-            ) : (
-              <img
-                key={currentMedia.url}
-                src={optimizedMediaUrl(currentMedia.url, 1200, 75)}
-                alt={post.title + " - " + (activeIndex + 1)}
-                loading="eager"
-                decoding="async"
-                draggable={false}
-                className={
-                  isReel
-                    ? "block h-full w-full object-contain"
-                    : "block h-auto w-full max-w-full object-contain sm:h-auto sm:w-auto sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)]"
-                }
-              />
-            )
+          {media.length > 0 ? (
+            <div
+              className="flex h-full items-start transition-transform duration-300 ease-out will-change-transform"
+              style={{
+                width: String(media.length * 100) + "%",
+                transform: "translate3d(-" + (activeIndex * 100 / media.length) + "%, 0, 0)",
+              }}
+            >
+              {media.map((item, index) => (
+                <div
+                  key={item.url + "-" + index}
+                  className="flex h-full flex-shrink-0 items-center justify-center"
+                  style={{ width: String(100 / media.length) + "%" }}
+                >
+                  {item.kind === "video" ? (
+                    <video
+                      src={item.url}
+                      controls
+                      playsInline
+                      preload={index === activeIndex ? "metadata" : "none"}
+                      className={
+                        isReel
+                          ? "block h-full w-full object-cover"
+                          : "block h-auto max-h-[92vh] w-full object-contain"
+                      }
+                    />
+                  ) : (
+                    <img
+                      src={optimizedMediaUrl(item.url, 1200, 75)}
+                      alt={post.title + " - " + (index + 1)}
+                      loading={Math.abs(index - activeIndex) <= 1 ? "eager" : "lazy"}
+                      decoding="async"
+                      draggable={false}
+                      className={
+                        isReel
+                          ? "block h-full w-full object-contain"
+                          : "block h-auto max-h-[92vh] w-full object-contain"
+                      }
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="flex min-h-[220px] w-full items-center justify-center p-8 text-center text-sm text-[#77736d]">
               {loadingMedia
