@@ -16,6 +16,7 @@ import StatusFilter from "./StatusFilter";
 import PostDetailModal from "./PostDetailModal";
 import StoryViewer from "./StoryViewer";
 import SessionBar from "./SessionBar";
+import TeamNameGate from "./TeamNameGate";
 
 interface InitialSnapshot {
   posts: NotionPost[];
@@ -39,8 +40,6 @@ interface InstagramWidgetProps {
   initialProfiles: Record<ProfileKey, InitialSnapshot>;
   profile: Profile;
   highlights: Highlight[];
-  userEmail: string;
-  userId: string;
 }
 
 interface ProfileConfig {
@@ -60,8 +59,6 @@ export default function InstagramWidget({
   initialProfiles,
   profile,
   highlights,
-  userEmail,
-  userId,
 }: InstagramWidgetProps) {
   const profileConfigs: Record<ProfileKey, ProfileConfig> = {
     mr: {
@@ -88,6 +85,9 @@ export default function InstagramWidget({
   };
 
   const [activeProfile, setActiveProfile] = useState<ProfileKey>("mr");
+  const [identityReady, setIdentityReady] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [actorId, setActorId] = useState("");
   const [postsByProfile, setPostsByProfile] = useState<Record<ProfileKey, NotionPost[]>>({
     mr: initialProfiles.mr.posts,
     lab: initialProfiles.lab.posts,
@@ -145,6 +145,23 @@ export default function InstagramWidget({
     mr: initialProfiles.mr.revision,
     lab: initialProfiles.lab.revision,
   });
+
+  useEffect(() => {
+    try {
+      const savedIdentity = localStorage.getItem("mr-team-identity");
+      if (savedIdentity) {
+        const parsed = JSON.parse(savedIdentity) as { displayName?: string; actorId?: string };
+        if (parsed.displayName && parsed.actorId) {
+          setDisplayName(parsed.displayName);
+          setActorId(parsed.actorId);
+        }
+      }
+    } catch {
+      localStorage.removeItem("mr-team-identity");
+    } finally {
+      setIdentityReady(true);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -509,6 +526,27 @@ export default function InstagramWidget({
 
   const [activeTab, setActiveTab] = useState<"grid" | "map">("grid");
 
+  function chooseTeamName(name: string) {
+    const nextActorId = crypto.randomUUID();
+    localStorage.setItem("mr-team-identity", JSON.stringify({ displayName: name, actorId: nextActorId }));
+    setDisplayName(name);
+    setActorId(nextActorId);
+  }
+
+  function changeTeamName() {
+    localStorage.removeItem("mr-team-identity");
+    setDisplayName("");
+    setActorId("");
+  }
+
+  if (!identityReady) {
+    return <main className="flex min-h-screen w-full items-center justify-center bg-[#f3f2ef] px-3 py-8 sm:px-6"><p className="text-[12px] text-[#77736d]">Carregando acesso…</p></main>;
+  }
+
+  if (!displayName || !actorId) {
+    return <main className="flex min-h-screen w-full items-center justify-center bg-[#f3f2ef] px-3 py-8 sm:px-6"><TeamNameGate onSelect={chooseTeamName} /></main>;
+  }
+
   return (
     <div className="w-full max-w-[430px] min-h-[780px] overflow-hidden rounded-[28px] border border-[#e8e6e2] bg-white shadow-[0_18px_55px_rgba(28,25,20,0.10)]">
       <div className="flex items-center justify-between gap-2 border-b border-[#efefef] bg-white px-3 py-3">
@@ -551,7 +589,7 @@ export default function InstagramWidget({
             );
           })}
         </div>
-        <SessionBar email={userEmail} />
+        <SessionBar name={displayName} onChangeName={changeTeamName} />
       </div>
 
       {settings.showBio && (
@@ -665,7 +703,8 @@ export default function InstagramWidget({
         <PostDetailModal
           post={selectedPost}
           profileName={activeProfileData.displayName}
-          userId={userId}
+          actorId={actorId}
+          displayName={displayName}
           loadingMedia={selectedPostLoading}
           mediaError={selectedPostError}
           onClose={() => {
