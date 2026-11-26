@@ -37,6 +37,7 @@ export default function PostDetailModal({
 
   const [portalReady, setPortalReady] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [mediaAspectRatios, setMediaAspectRatios] = useState<Record<number, number>>({});
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -69,6 +70,14 @@ export default function PostDetailModal({
     return post.thumbnail && post.thumbnail !== media[index]?.url
       ? optimizedMediaUrl(post.thumbnail, 1200, 75)
       : undefined;
+  };
+
+  const setMediaAspectRatio = (index: number, width: number, height: number) => {
+    if (!width || !height) return;
+    const ratio = width / height;
+    setMediaAspectRatios((current) =>
+      current[index] === ratio ? current : { ...current, [index]: ratio }
+    );
   };
 
   const goToMedia = (index: number) => {
@@ -134,6 +143,7 @@ export default function PostDetailModal({
 
   useEffect(() => {
     setActiveIndex(0);
+    setMediaAspectRatios({});
     setDetailsExpanded(false);
     setDragOffset(0);
     setIsDragging(false);
@@ -222,6 +232,13 @@ export default function PostDetailModal({
           style={{
             touchAction: isCarousel ? "pan-y" : "auto",
             cursor: isCarousel ? (isDragging ? "grabbing" : "grab") : "default",
+            aspectRatio: !isReel
+              ? mediaAspectRatios[activeIndex]
+                ? String(mediaAspectRatios[activeIndex])
+                : isCarousel
+                  ? "4 / 5"
+                  : undefined
+              : undefined,
           }}
         >
           {media.length > 0 ? (
@@ -251,6 +268,9 @@ export default function PostDetailModal({
                       autoPlay={isCarousel && index === activeIndex}
                       muted={isCarousel}
                       loop={isCarousel}
+                      onLoadedMetadata={(event) =>
+                        setMediaAspectRatio(index, event.currentTarget.videoWidth, event.currentTarget.videoHeight)
+                      }
                       preload={
                         index === activeIndex
                           ? "auto"
@@ -272,6 +292,9 @@ export default function PostDetailModal({
                       alt={post.title + " - " + (index + 1)}
                       loading={Math.abs(index - activeIndex) <= 1 ? "eager" : "lazy"}
                       decoding="async"
+                      onLoad={(event) =>
+                        setMediaAspectRatio(index, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+                      }
                       draggable={false}
                       className={
                         isReel || isCarousel
@@ -415,7 +438,7 @@ export default function PostDetailModal({
 
           <div
             className={
-              "min-h-0 flex-1 overflow-y-auto px-5 py-4 " +
+              "min-h-0 flex-none px-5 py-4 sm:flex-1 sm:overflow-y-auto " +
               (isReel && !detailsExpanded ? "hidden sm:block" : "")
             }
           >
