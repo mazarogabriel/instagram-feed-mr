@@ -31,6 +31,8 @@ export default function PostDetailModal({
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const pointerStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const mediaFrameRef = useRef<HTMLDivElement | null>(null);
   const isReel = post.format?.trim().toLocaleLowerCase("pt-BR") === "reels";
@@ -55,7 +57,7 @@ export default function PostDetailModal({
   };
 
   const handleSwipeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (!isCarousel || event.button !== 0) return;
     if (event.target instanceof Element && event.target.closest("button, a")) return;
 
     pointerStart.current = {
@@ -66,23 +68,55 @@ export default function PostDetailModal({
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const handleSwipeEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const handleSwipeMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const start = pointerStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
 
     const deltaX = event.clientX - start.x;
     const deltaY = event.clientY - start.y;
+
+    // Keep native vertical scrolling, but move the media track with the finger.
+    if (Math.abs(deltaX) < 4 || Math.abs(deltaX) < Math.abs(deltaY) * 1.15) return;
+
+    event.preventDefault();
+    const pullingPastStart = activeIndex === 0 && deltaX > 0;
+    const pullingPastEnd = activeIndex === media.length - 1 && deltaX < 0;
+    setIsDragging(true);
+    setDragOffset(pullingPastStart || pullingPastEnd ? deltaX * 0.28 : deltaX);
+  };
+
+  const finishSwipe = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = pointerStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    const frameWidth = mediaFrameRef.current?.clientWidth ?? 320;
+    const threshold = Math.max(48, frameWidth * 0.18);
     pointerStart.current = null;
 
-    // Ignore vertical scrolling and short taps. Horizontal dragging works
-    // with both touch and mouse, then the track animates to the next slide.
-    if (Math.abs(deltaX) < 45 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
-    goToMedia(activeIndex + (deltaX < 0 ? 1 : -1));
+    if (Math.abs(deltaX) >= Math.abs(deltaY) * 1.15) {
+      if (deltaX <= -threshold && activeIndex < media.length - 1) {
+        setActiveIndex((index) => Math.min(media.length - 1, index + 1));
+      } else if (deltaX >= threshold && activeIndex > 0) {
+        setActiveIndex((index) => Math.max(0, index - 1));
+      }
+    }
+
+    // The remaining distance animates naturally to the next slide or back.
+    setDragOffset(0);
+    setIsDragging(false);
+  };
+
+  const handleSwipeEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    finishSwipe(event);
   };
 
   useEffect(() => {
     setActiveIndex(0);
     setDetailsExpanded(false);
+    setDragOffset(0);
+    setIsDragging(false);
     pointerStart.current = null;
   }, [post.id]);
 
@@ -128,7 +162,7 @@ export default function PostDetailModal({
     <div
       className={
         "fixed inset-0 z-[100] flex items-center justify-center " +
-        (isReel ? "bg-black p-0 sm:p-6" : "bg-black/60 p-3 sm:p-6")
+        (isReel ? "bg-black p-0 sm:p-6" : "bg-white p-0 sm:bg-black/60 sm:p-6")
       }
       role="presentation"
       onMouseDown={(event) => {
@@ -143,15 +177,18 @@ export default function PostDetailModal({
           "relative flex w-full flex-col shadow-2xl " +
           (isReel
             ? "h-[100dvh] max-h-[100dvh] max-w-none overflow-hidden rounded-none bg-black sm:h-[92vh] sm:max-h-[92vh] sm:max-w-[980px] sm:flex-row sm:rounded-2xl"
-            : "max-h-[92vh] max-w-[850px] overflow-y-auto rounded-2xl bg-white sm:w-auto sm:max-w-[96vw] sm:flex-row sm:items-start sm:overflow-hidden")
+            : "h-[100dvh] max-h-[100dvh] max-w-none overflow-y-auto rounded-none bg-white sm:h-auto sm:max-h-[92vh] sm:max-w-[850px] sm:rounded-2xl sm:overflow-y-auto sm:w-auto sm:max-w-[96vw] sm:flex-row sm:items-start sm:overflow-hidden")
         }
       >
         <div
           ref={mediaFrameRef}
           onPointerDown={handleSwipeStart}
+          onPointerMove={handleSwipeMove}
           onPointerUp={handleSwipeEnd}
           onPointerCancel={() => {
             pointerStart.current = null;
+            setDragOffset(0);
+            setIsDragging(false);
           }}
           className={
             "relative flex flex-shrink-0 items-center justify-center overflow-hidden " +
@@ -160,14 +197,20 @@ export default function PostDetailModal({
               : "w-full self-start bg-white sm:h-auto sm:w-[48%] sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)] " +
                 (isCarousel ? "aspect-[4/5]" : ""))
           }
-          style={{ touchAction: "pan-y", cursor: media.length > 1 ? "grab" : "default" }}
+          style={{
+            touchAction: isCarousel ? "pan-y" : "auto",
+            cursor: isCarousel ? (isDragging ? "grabbing" : "grab") : "default",
+          }}
         >
           {media.length > 0 ? (
             <div
-              className="flex h-full w-full flex-shrink-0 items-start transition-transform duration-300 ease-out will-change-transform"
+              className="flex h-full w-full flex-shrink-0 items-start will-change-transform"
               style={{
                 width: "100%",
-                transform: "translate3d(-" + activeIndex * 100 + "%, 0, 0)",
+                transform: "translate3d(calc(-" + activeIndex * 100 + "% + " + dragOffset + "px), 0, 0)",
+                transition: isDragging
+                  ? "none"
+                  : "transform 280ms cubic-bezier(0.22, 0.61, 0.36, 1)",
               }}
             >
               {media.map((item, index) => (
