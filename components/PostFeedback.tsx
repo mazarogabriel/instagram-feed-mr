@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Heart, Send, Pencil, Check, X } from "lucide-react";
+import { Heart, Send, Pencil, Trash2, Check, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 type LikeRow = { actor_id: string; display_name: string };
@@ -101,6 +101,19 @@ export default function PostFeedback({
       await loadFeedback();
     }
     setSaving(false);
+  }
+
+  async function deleteComment(commentId: string) {
+    const { error: deleteError } = await supabase.from("post_comments_by_name")
+      .delete()
+      .eq("id", commentId)
+      .eq("actor_id", actorId);
+
+    if (deleteError) {
+      setError("Não foi possível excluir o comentário.");
+    } else {
+      await loadFeedback();
+    }
   }
 
   function startEditingComment(item: CommentRow) {
@@ -226,15 +239,26 @@ export default function PostFeedback({
                         )}
                       </div>
                       {item.actor_id === actorId && editingCommentId !== item.id && (
-                        <button
-                          type="button"
-                          onClick={() => startEditingComment(item)}
-                          aria-label="Editar comentário"
-                          title="Editar comentário"
-                          className="rounded-full p-1 text-[#99958e] hover:bg-white hover:text-[#4c4944]"
-                        >
-                          <Pencil size={13} />
-                        </button>
+                        <div className="flex flex-shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => startEditingComment(item)}
+                            aria-label="Editar comentário"
+                            title="Editar comentário"
+                            className="rounded-full p-1.5 text-[#99958e] hover:bg-white hover:text-[#4c4944]"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteComment(item.id)}
+                            aria-label="Excluir comentário"
+                            title="Excluir comentário"
+                            className="rounded-full p-1.5 text-[#99958e] hover:bg-white hover:text-[#a33f43]"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </article>
