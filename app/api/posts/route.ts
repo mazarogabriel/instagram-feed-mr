@@ -16,13 +16,29 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const requestedProfile = url.searchParams.get("profile");
     const profile: ProfileKey = requestedProfile === "lab" ? "lab" : "mr";
-    const { posts, revision } = await fetchPostsSnapshot(profile);
+    const offsetValue = Number(url.searchParams.get("offset") ?? "0");
+    const offset =
+      Number.isFinite(offsetValue) && offsetValue >= 0
+        ? Math.floor(offsetValue)
+        : 0;
+    const {
+      posts,
+      revision,
+      hasMore,
+      nextOffset,
+      publishedCount,
+      completedCount,
+    } = await fetchPostsSnapshot(profile, offset);
 
     return NextResponse.json(
       {
         profile,
         posts,
         revision,
+        hasMore,
+        nextOffset,
+        publishedCount,
+        completedCount,
         refreshedAt: new Date().toISOString(),
       },
       { headers: noCacheHeaders }
