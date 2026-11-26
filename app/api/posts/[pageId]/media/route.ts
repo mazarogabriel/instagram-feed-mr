@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchPostDetails, type ProfileKey } from "@/lib/notion";
+import { getTeamUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,6 +16,11 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ pageId: string }> }
 ) {
+  const user = await getTeamUser();
+  if (!user) {
+    return NextResponse.json({ error: "Acesso não autorizado." }, { status: 401, headers: noCacheHeaders });
+  }
+
   try {
     const { pageId } = await context.params;
     const url = new URL(request.url);
