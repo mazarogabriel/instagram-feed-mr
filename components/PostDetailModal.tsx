@@ -32,8 +32,22 @@ export default function PostDetailModal({
   const [activeIndex, setActiveIndex] = useState(0);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const pointerStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const mediaFrameRef = useRef<HTMLDivElement | null>(null);
   const isReel = post.format?.trim().toLocaleLowerCase("pt-BR") === "reels";
-  const currentMedia = media[activeIndex];
+  const isCarousel = media.length > 1 && !isReel;
+
+  const getVideoPoster = (index: number): string | undefined => {
+    for (let distance = 1; distance < media.length; distance += 1) {
+      const next = media[index + distance];
+      if (next?.kind === "image") return optimizedMediaUrl(next.url, 1200, 75);
+      const previous = media[index - distance];
+      if (previous?.kind === "image") return optimizedMediaUrl(previous.url, 1200, 75);
+    }
+
+    return post.thumbnail && post.thumbnail !== media[index]?.url
+      ? optimizedMediaUrl(post.thumbnail, 1200, 75)
+      : undefined;
+  };
 
   const goToMedia = (index: number) => {
     const safeIndex = Math.max(0, Math.min(media.length - 1, index));
@@ -73,6 +87,30 @@ export default function PostDetailModal({
   }, [post.id]);
 
   useEffect(() => {
+    const videos = mediaFrameRef.current?.querySelectorAll<HTMLVideoElement>(
+      "video[data-carousel-index]"
+    );
+    if (!videos) return;
+
+    videos.forEach((video) => {
+      const isActiveVideo = Number(video.dataset.carouselIndex) === activeIndex;
+      if (isCarousel && isActiveVideo) {
+        video.muted = true;
+        const playAttempt = video.play();
+        if (playAttempt) void playAttempt.catch(() => {
+          // Autoplay can be blocked by the browser; native controls remain available.
+        });
+      } else {
+        video.pause();
+      }
+    });
+
+    return () => {
+      videos.forEach((video) => video.pause());
+    };
+  }, [activeIndex, isCarousel, post.id]);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
       if (event.key === "ArrowRight") {
@@ -109,6 +147,7 @@ export default function PostDetailModal({
         }
       >
         <div
+          ref={mediaFrameRef}
           onPointerDown={handleSwipeStart}
           onPointerUp={handleSwipeEnd}
           onPointerCancel={() => {
@@ -118,34 +157,46 @@ export default function PostDetailModal({
             "relative flex flex-shrink-0 items-center justify-center overflow-hidden " +
             (isReel
               ? "h-[calc(100dvh-116px)] max-h-[calc(100dvh-116px)] w-full bg-black sm:h-[92vh] sm:max-h-[92vh] sm:w-[54%]"
-              : "w-full self-start bg-white sm:h-auto sm:w-[48%] sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)]")
+              : "w-full self-start bg-white sm:h-auto sm:w-[48%] sm:max-h-[92vh] sm:max-w-[calc(96vw-420px)] " +
+                (isCarousel ? "aspect-[4/5]" : ""))
           }
           style={{ touchAction: "pan-y", cursor: media.length > 1 ? "grab" : "default" }}
         >
           {media.length > 0 ? (
             <div
-              className="flex h-full flex-shrink-0 items-start transition-transform duration-300 ease-out will-change-transform"
+              className="flex h-full w-full flex-shrink-0 items-start transition-transform duration-300 ease-out will-change-transform"
               style={{
-                width: String(media.length * 100) + "%",
-                transform: "translate3d(-" + (activeIndex * 100 / media.length) + "%, 0, 0)",
+                width: "100%",
+                transform: "translate3d(-" + activeIndex * 100 + "%, 0, 0)",
               }}
             >
               {media.map((item, index) => (
                 <div
                   key={item.url + "-" + index}
-                  className="flex h-full flex-shrink-0 items-center justify-center"
-                  style={{ width: String(100 / media.length) + "%" }}
+                  className="flex h-full w-full flex-[0_0_100%] items-center justify-center"
+                  style={{ flexBasis: "100%", width: "100%" }}
                 >
                   {item.kind === "video" ? (
                     <video
                       src={item.url}
+                      poster={getVideoPoster(index)}
+                      data-carousel-index={isCarousel ? index : undefined}
                       controls
                       playsInline
-                      preload={index === activeIndex ? "metadata" : "none"}
+                      autoPlay={isCarousel && index === activeIndex}
+                      muted={isCarousel}
+                      loop={isCarousel}
+                      preload={
+                        isCarousel
+                          ? Math.abs(index - activeIndex) <= 1 ? "auto" : "metadata"
+                          : index === activeIndex ? "metadata" : "none"
+                      }
                       className={
                         isReel
                           ? "block h-full w-full object-cover"
-                          : "block h-auto max-h-[92vh] w-full object-contain"
+                          : isCarousel
+                            ? "block h-full w-full object-contain"
+                            : "block h-auto max-h-[92vh] w-full object-contain"
                       }
                     />
                   ) : (
@@ -156,7 +207,7 @@ export default function PostDetailModal({
                       decoding="async"
                       draggable={false}
                       className={
-                        isReel
+                        isReel || isCarousel
                           ? "block h-full w-full object-contain"
                           : "block h-auto max-h-[92vh] w-full object-contain"
                       }
