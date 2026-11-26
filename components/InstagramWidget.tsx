@@ -588,7 +588,7 @@ export default function InstagramWidget({
             );
           })}
         </div>
-        <SessionBar name={displayName} onChangeName={changeTeamName} />
+        <SessionBar name={displayName} onSignOut={changeTeamName} />
       </div>
 
       {settings.showBio && (
