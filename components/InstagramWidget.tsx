@@ -5,7 +5,6 @@ import Image from "next/image";
 import type { NotionPost, Profile, Highlight, WidgetSettings, StoryMedia } from "@/lib/types";
 import type { ProfileKey } from "@/lib/notion";
 import { sortPosts } from "@/lib/utils";
-import { optimizedMediaUrl } from "@/lib/media-url";
 import ProfileHeader from "./ProfileHeader";
 import Highlights from "./Highlights";
 import Toolbar from "./Toolbar";
