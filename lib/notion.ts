@@ -521,53 +521,109 @@ export async function fetchPostDetails(
   return results[pageId];
 }
 
+const FEED_PAGE_SIZE = 12;
+
+function pageDate(page: NotionPage): string | null {
+  return page.properties["Data de Publicação"]?.date?.start ?? null;
+}
+
+function pageToPost(item: NotionPage, media: StoryMedia[] = []): NotionPost {
+  return {
+    id: item.id,
+    title: extractTitle(item.properties),
+    thumbnail:
+      media.find((asset) => asset.kind === "image")?.url ??
+      media[0]?.url ??
+      null,
+    caption: cleanCaption(
+      richTextToString(item.properties["Legenda (texto)"]?.rich_text)
+    ),
+    pageUrl: item.url ?? "https://www.notion.so/" + item.id.replace(/-/g, ""),
+    publishDate: pageDate(item),
+    status: item.properties["Status"]?.status?.name ?? null,
+    format: item.properties["Tipo/Formato"]?.select?.name ?? null,
+    media,
+  };
+}
+
 export async function fetchPostsSnapshot(
-  profile: ProfileKey = "mr"
-): Promise<{ posts: NotionPost[]; revision: string }> {
-  // Feed loading is deliberately lightweight: fetch database properties and
-  // thumbnails only. Full block media is requested only when a post is opened.
+  profile: ProfileKey = "mr",
+  offset = 0
+): Promise<{
+  posts: NotionPost[];
+  revision: string;
+  hasMore: boolean;
+  nextOffset: number;
+  publishedCount: number;
+  completedCount: number;
+}> {
+  // Read the database properties once, but resolve thumbnails only for the
+  // requested 12-item page. Published Stories are returned as lightweight
+  // records and their full media is loaded after the main feed.
   const pages = await fetchCompanyPages(profile);
   const revision = createRevision(pages);
 
+  const storyPages = pages
+    .filter(
+      (page) =>
+        page.properties["Tipo/Formato"]?.select?.name === "Stories" &&
+        page.properties["Status"]?.status?.name === "Publicado"
+    )
+    .sort((a, b) => (pageDate(b) ?? "").localeCompare(pageDate(a) ?? ""));
+
+  const feedPages = pages
+    .filter((page) => {
+      const status = page.properties["Status"]?.status?.name;
+      return (
+        page.properties["Tipo/Formato"]?.select?.name !== "Stories" &&
+        (status === "Publicado" || status === "Concluído")
+      );
+    })
+    .sort((a, b) => (pageDate(b) ?? "").localeCompare(pageDate(a) ?? ""));
+
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const selectedPages = feedPages.slice(safeOffset, safeOffset + FEED_PAGE_SIZE);
   const token = getToken();
-  const posts = await mapWithConcurrency(pages, 1, async (item) => {
+
+  // Two requests per profile at a time: enough parallelism to reduce the old
+  // sequential delay without flooding the Notion integration with requests.
+  const feedPosts = await mapWithConcurrency(selectedPages, 2, async (item) => {
     const propertyMedia = extractPropertyMedia(item.properties);
     let firstBodyMedia: StoryMedia | null = null;
 
-    // The workspace usually stores the cover image as a block in the page body,
-    // not in the Imagens property. Read only the first media block for the grid.
     if (!propertyMedia.some((asset) => asset.kind === "image")) {
       try {
         firstBodyMedia = await getFirstPageMedia(item.id, token);
       } catch {
-        // Keep the grid usable even when a preview cannot be fetched.
+        // A missing thumbnail must not prevent the rest of the feed from loading.
       }
     }
 
-    const media = dedupeMedia([
-      ...propertyMedia,
-      ...(firstBodyMedia ? [firstBodyMedia] : []),
-    ]);
-
-    return {
-      id: item.id,
-      title: extractTitle(item.properties),
-      thumbnail:
-        media.find((asset) => asset.kind === "image")?.url ??
-        media[0]?.url ??
-        null,
-      caption: cleanCaption(
-        richTextToString(item.properties["Legenda (texto)"]?.rich_text)
-      ),
-      pageUrl: item.url ?? "https://www.notion.so/" + item.id.replace(/-/g, ""),
-      publishDate: item.properties["Data de Publicação"]?.date?.start ?? null,
-      status: item.properties["Status"]?.status?.name ?? null,
-      format: item.properties["Tipo/Formato"]?.select?.name ?? null,
-      media,
-    };
+    return pageToPost(
+      item,
+      dedupeMedia([...propertyMedia, ...(firstBodyMedia ? [firstBodyMedia] : [])])
+    );
   });
 
-  return { posts, revision };
+  // Story cards need only their metadata at startup. The Story viewer fetches
+  // all slides when opened, after the first feed page has already appeared.
+  const storyPosts =
+    safeOffset === 0
+      ? storyPages.map((page) => pageToPost(page, extractPropertyMedia(page.properties)))
+      : [];
+
+  return {
+    posts: [...feedPosts, ...storyPosts],
+    revision,
+    hasMore: safeOffset + FEED_PAGE_SIZE < feedPages.length,
+    nextOffset: Math.min(safeOffset + FEED_PAGE_SIZE, feedPages.length),
+    publishedCount: feedPages.filter(
+      (page) => page.properties["Status"]?.status?.name === "Publicado"
+    ).length,
+    completedCount: feedPages.filter(
+      (page) => page.properties["Status"]?.status?.name === "Concluído"
+    ).length,
+  };
 }
 
 export async function fetchPosts(profile: ProfileKey = "mr"): Promise<NotionPost[]> {
