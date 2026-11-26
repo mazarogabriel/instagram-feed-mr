@@ -438,7 +438,8 @@ export default function PostDetailModal({
 
           <div
             className={
-              "min-h-0 flex-none px-5 py-4 sm:flex-1 sm:overflow-y-auto " +
+              "min-h-0 px-5 py-4 " +
+              (isReel ? "flex-1 overflow-y-auto" : "flex-none sm:flex-1 sm:overflow-y-auto ") +
               (isReel && !detailsExpanded ? "hidden sm:block" : "")
             }
           >
