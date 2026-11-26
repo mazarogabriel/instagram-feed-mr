@@ -20,6 +20,10 @@ import StoryViewer from "./StoryViewer";
 interface InitialSnapshot {
   posts: NotionPost[];
   revision: string;
+  hasMore: boolean;
+  nextOffset: number;
+  publishedCount: number;
+  completedCount: number;
   error?: string;
 }
 
@@ -114,6 +118,30 @@ export default function InstagramWidget({
     mr: initialProfiles.mr.posts,
     lab: initialProfiles.lab.posts,
   });
+  const [hasMoreByProfile, setHasMoreByProfile] = useState<Record<ProfileKey, boolean>>({
+    mr: initialProfiles.mr.hasMore,
+    lab: initialProfiles.lab.hasMore,
+  });
+  const [nextOffsetByProfile, setNextOffsetByProfile] = useState<Record<ProfileKey, number>>({
+    mr: initialProfiles.mr.nextOffset,
+    lab: initialProfiles.lab.nextOffset,
+  });
+  const [loadingMoreByProfile, setLoadingMoreByProfile] = useState<Record<ProfileKey, boolean>>({
+    mr: false,
+    lab: false,
+  });
+  const [countsByProfile, setCountsByProfile] = useState<
+    Record<ProfileKey, { published: number; completed: number }>
+  >({
+    mr: {
+      published: initialProfiles.mr.publishedCount,
+      completed: initialProfiles.mr.completedCount,
+    },
+    lab: {
+      published: initialProfiles.lab.publishedCount,
+      completed: initialProfiles.lab.completedCount,
+    },
+  });
   const [loadingByProfile, setLoadingByProfile] = useState<Record<ProfileKey, boolean>>({
     mr: false,
     lab: false,
@@ -194,7 +222,7 @@ export default function InstagramWidget({
 
     try {
       const response = await fetch(
-        "/api/posts?profile=" + profileKey + "&refresh=" + Date.now(),
+        "/api/posts?profile=" + profileKey + "&offset=0&refresh=" + Date.now(),
         {
           cache: "no-store",
           headers: {
@@ -213,10 +241,38 @@ export default function InstagramWidget({
       }
 
       if (requestId === requestSequence.current[profileKey]) {
-        // A changed Notion revision may have new media URLs or expired file
-        // links. Discard this profile's media cache and let the queue rebuild it.
+        // Keep older batches already loaded by the user, but replace the first
+        // 12 posts and the complete published-Stories list with fresh data.
         postMediaCache.current[profileKey].clear();
-        setPostsByProfile((current) => ({ ...current, [profileKey]: [...data.posts] }));
+        setPostsByProfile((current) => {
+          const firstPageIds = new Set(
+            data.posts
+              .filter((post: NotionPost) => post.format !== "Stories")
+              .map((post: NotionPost) => post.id)
+          );
+          const loadedOlder = (current[profileKey] ?? []).filter(
+            (post) => post.format !== "Stories" && !firstPageIds.has(post.id)
+          );
+          return {
+            ...current,
+            [profileKey]: [...data.posts, ...loadedOlder],
+          };
+        });
+        setHasMoreByProfile((current) => ({
+          ...current,
+          [profileKey]: Boolean(data.hasMore),
+        }));
+        setNextOffsetByProfile((current) => ({
+          ...current,
+          [profileKey]: Math.max(current[profileKey], Number(data.nextOffset) || 12),
+        }));
+        setCountsByProfile((current) => ({
+          ...current,
+          [profileKey]: {
+            published: Number(data.publishedCount) || 0,
+            completed: Number(data.completedCount) || 0,
+          },
+        }));
         currentRevisions.current[profileKey] = data.revision ?? "";
         setLastUpdatedByProfile((current) => ({ ...current, [profileKey]: new Date() }));
         if (silent) {
@@ -236,6 +292,68 @@ export default function InstagramWidget({
       }
     }
   }, []);
+
+  const loadMorePosts = useCallback(async (profileKey: ProfileKey) => {
+    if (!hasMoreByProfile[profileKey] || loadingMoreByProfile[profileKey]) return;
+
+    const offset = nextOffsetByProfile[profileKey];
+    setLoadingMoreByProfile((current) => ({ ...current, [profileKey]: true }));
+
+    try {
+      const response = await fetch(
+        "/api/posts?profile=" + profileKey + "&offset=" + offset + "&page=" + Date.now(),
+        {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store",
+            Pragma: "no-cache",
+          },
+        }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Não foi possível carregar as publicações anteriores.");
+      }
+      if (!Array.isArray(data.posts)) {
+        throw new Error("A resposta do Notion não trouxe uma lista de publicações.");
+      }
+
+      setPostsByProfile((current) => {
+        const existingIds = new Set((current[profileKey] ?? []).map((post) => post.id));
+        const nextPosts = data.posts.filter((post: NotionPost) => !existingIds.has(post.id));
+        return {
+          ...current,
+          [profileKey]: [...(current[profileKey] ?? []), ...nextPosts],
+        };
+      });
+      setHasMoreByProfile((current) => ({
+        ...current,
+        [profileKey]: Boolean(data.hasMore),
+      }));
+      setNextOffsetByProfile((current) => ({
+        ...current,
+        [profileKey]: Number(data.nextOffset) || offset + 12,
+      }));
+      setCountsByProfile((current) => ({
+        ...current,
+        [profileKey]: {
+          published: Number(data.publishedCount) || current[profileKey].published,
+          completed: Number(data.completedCount) || current[profileKey].completed,
+        },
+      }));
+    } catch (error) {
+      setErrorsByProfile((current) => ({
+        ...current,
+        [profileKey]:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível carregar as publicações anteriores.",
+      }));
+    } finally {
+      setLoadingMoreByProfile((current) => ({ ...current, [profileKey]: false }));
+    }
+  }, [hasMoreByProfile, loadingMoreByProfile, nextOffsetByProfile]);
 
   const refresh = useCallback(() => {
     void loadPosts(activeProfile);
@@ -410,20 +528,15 @@ export default function InstagramWidget({
             return dateB - dateA;
           });
 
-        // Priority order: newest post first, then every published Story,
-        // then all remaining posts from newest to oldest.
-        const firstPost = newestFirst.slice(0, 1);
+        // Priority: the first 12 feed posts at the top, then published Stories,
+        // then older posts only after the user has requested another batch.
+        const regularPosts = newestFirst.filter((post) => post.format !== "Stories");
+        const firstTwelve = regularPosts.slice(0, 12);
         const publishedStories = newestFirst.filter(
           (post) => post.status === "Publicado" && post.format === "Stories"
         );
-        const priorityIds = new Set(
-          [...firstPost, ...publishedStories].map((post) => post.id)
-        );
-        const candidates = [
-          ...firstPost,
-          ...publishedStories.filter((post) => !firstPost.some((first) => first.id === post.id)),
-          ...newestFirst.filter((post) => !priorityIds.has(post.id)),
-        ];
+        const olderPosts = regularPosts.slice(12);
+        const candidates = [...firstTwelve, ...publishedStories, ...olderPosts];
 
         for (let index = 0; index < candidates.length && !cancelled; index += MEDIA_BATCH_SIZE) {
           const batch = candidates
@@ -536,8 +649,11 @@ export default function InstagramWidget({
       return a.publishDate.localeCompare(b.publishDate);
     });
 
-  const publishedCount = feedPosts.filter((post) => post.status === "Publicado").length;
-  const completedCount = feedPosts.filter((post) => post.status === "Concluído").length;
+  const publishedCount = countsByProfile[activeProfile].published;
+  const completedCount = countsByProfile[activeProfile].completed;
+  const visibleTotalCount =
+    (showPublished ? publishedCount : 0) +
+    (showCompleted ? completedCount : 0);
 
   const [activeTab, setActiveTab] = useState<"grid" | "map">("grid");
 
@@ -588,7 +704,7 @@ export default function InstagramWidget({
       {settings.showBio && (
         <ProfileHeader
           profile={activeProfileData}
-          postCount={visiblePosts.length}
+          postCount={visibleTotalCount}
           storyCount={publishedStories.length}
           onOpenStories={() => setStoriesOpen(true)}
         />
@@ -661,6 +777,21 @@ export default function InstagramWidget({
         <InstagramGrid posts={visiblePosts} onSelectPost={openPost} />
       ) : (
         <ContentMap posts={visiblePosts} />
+      )}
+
+      {hasMoreByProfile[activeProfile] && (
+        <div className="flex justify-center border-t border-[#efefef] px-4 py-4">
+          <button
+            type="button"
+            onClick={() => void loadMorePosts(activeProfile)}
+            disabled={loadingMoreByProfile[activeProfile]}
+            className="rounded-full bg-[#f2f1ee] px-5 py-2.5 text-[12px] font-medium text-[#4c4944] transition-colors hover:bg-[#e9e7e2] disabled:cursor-wait disabled:opacity-60"
+          >
+            {loadingMoreByProfile[activeProfile]
+              ? "Carregando publicações…"
+              : "Carregar publicações anteriores"}
+          </button>
+        </div>
       )}
 
       <div className="mt-2 border-t border-[#dbdbdb] px-4 py-3 text-center">
