@@ -10,37 +10,7 @@ create table if not exists public.team_members (
   created_at timestamptz not null default now()
 );
 
-create or replace function public.handle_new_team_auth_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if new.email is not null and lower(new.email) like '%@melinaromano.com' then
-    insert into public.team_members (user_id, email, display_name)
-    values (
-      new.id,
-      lower(new.email),
-      coalesce(
-        nullif(new.raw_user_meta_data ->> 'full_name', ''),
-        split_part(lower(new.email), '@', 1)
-      )
-    )
-    on conflict (user_id) do update
-      set email = excluded.email;
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created_team_member on auth.users;
-create trigger on_auth_user_created_team_member
-  after insert on auth.users
-  for each row execute procedure public.handle_new_team_auth_user();
-
--- Backfill users created before this migration (including the initial test user).
+-- Team membership is an explicit allowlist. Users are not added automatically.\n-- Create each auth user in the Dashboard, then run the backfill below.\n\n-- Backfill users created before this migration (including the initial test user).
 insert into public.team_members (user_id, email, display_name)
 select
   id,
@@ -148,7 +118,7 @@ create policy "Authors can delete their own comments"
   to authenticated
   using (user_id = auth.uid() and public.is_team_member());
 
-grant select on public.team_members to authenticated;
+grant usage on schema public to authenticated;\ngrant select on public.team_members to authenticated;\nrevoke all on function public.is_team_member() from public, anon;\ngrant execute on function public.is_team_member() to authenticated;
 grant select, insert, delete on public.post_likes to authenticated;
 grant select, insert, update, delete on public.post_comments to authenticated;
 
