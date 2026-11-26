@@ -28,6 +28,10 @@ function getHighlights(): Highlight[] {
 type InitialSnapshot = {
   posts: NotionPost[];
   revision: string;
+  hasMore: boolean;
+  nextOffset: number;
+  publishedCount: number;
+  completedCount: number;
   error?: string;
 };
 
@@ -37,11 +41,19 @@ async function loadInitialSnapshot(profile: ProfileKey): Promise<InitialSnapshot
     return {
       posts: snapshot.posts,
       revision: snapshot.revision,
+      hasMore: snapshot.hasMore,
+      nextOffset: snapshot.nextOffset,
+      publishedCount: snapshot.publishedCount,
+      completedCount: snapshot.completedCount,
     };
   } catch (error) {
     return {
       posts: [],
       revision: "",
+      hasMore: false,
+      nextOffset: 0,
+      publishedCount: 0,
+      completedCount: 0,
       error: error instanceof Error
         ? error.message
         : "Não foi possível conectar ao Notion. Verifique as variáveis de ambiente.",
