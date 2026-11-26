@@ -36,15 +36,31 @@ interface CachedPostMedia {
 const MEDIA_CACHE_TTL = 45 * 60 * 1000;
 const MEDIA_BATCH_SIZE = 4;
 
-function preloadImage(url: string): Promise<void> {
+function preloadImage(url: string, width = 1200, quality = 75): Promise<void> {
   return new Promise((resolve) => {
     const image = new window.Image();
     image.decoding = "async";
     image.onload = () => resolve();
     image.onerror = () => resolve();
-    image.src = optimizedMediaUrl(url, 1200, 75);
+    image.src = optimizedMediaUrl(url, width, quality);
     if (image.complete) resolve();
   });
+}
+
+async function preloadGridThumbnails(posts: NotionPost[]): Promise<void> {
+  const thumbnails = posts
+    .map((post) => post.thumbnail)
+    .filter((url): url is string => Boolean(url));
+
+  // Warm the exact optimized URLs used by GridCell for both profiles,
+  // including the profile that is not currently visible in the interface.
+  for (let index = 0; index < thumbnails.length; index += 4) {
+    await Promise.all(
+      thumbnails
+        .slice(index, index + 4)
+        .map((url) => preloadImage(url, 384, 60))
+    );
+  }
 }
 
 async function preloadMediaAssets(media: StoryMedia[]): Promise<void> {
@@ -535,8 +551,14 @@ export default function InstagramWidget({
         const publishedStories = newestFirst.filter(
           (post) => post.status === "Publicado" && post.format === "Stories"
         );
-        const olderPosts = regularPosts.slice(12);
-        const candidates = [...firstTwelve, ...publishedStories, ...olderPosts];
+        // First warm the visible-size thumbnails for this profile. Both
+        // profile queues start together, so LAB is ready before it is selected.
+        await preloadGridThumbnails(firstTwelve);
+        if (cancelled) return;
+
+        // Full post metadata follows the first 12, then published Stories.
+        // Older pages only enter this queue after the user loads another batch.
+        const candidates = [...firstTwelve, ...publishedStories];
 
         for (let index = 0; index < candidates.length && !cancelled; index += MEDIA_BATCH_SIZE) {
           const batch = candidates
@@ -615,7 +637,7 @@ export default function InstagramWidget({
       ]);
     };
 
-    const timer = window.setTimeout(startPrefetch, 1500);
+    const timer = window.setTimeout(startPrefetch, 250);
     document.addEventListener("visibilitychange", startPrefetch);
 
     return () => {
