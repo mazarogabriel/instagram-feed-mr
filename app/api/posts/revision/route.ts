@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { fetchPostsRevision, type ProfileKey } from "@/lib/notion";
-import { getTeamUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,11 +12,6 @@ const noCacheHeaders = {
 };
 
 export async function GET(request: Request) {
-  const user = await getTeamUser();
-  if (!user) {
-    return NextResponse.json({ error: "Acesso não autorizado." }, { status: 401, headers: noCacheHeaders });
-  }
-
   try {
     const url = new URL(request.url);
     const requestedProfile = url.searchParams.get("profile");
