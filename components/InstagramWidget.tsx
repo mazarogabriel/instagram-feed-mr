@@ -526,8 +526,7 @@ export default function InstagramWidget({
 
   const [activeTab, setActiveTab] = useState<"grid" | "map">("grid");
 
-  function chooseTeamName(name: string) {
-    const nextActorId = crypto.randomUUID();
+  function chooseTeamName(name: string, nextActorId: string) {
     localStorage.setItem("mr-team-identity", JSON.stringify({ displayName: name, actorId: nextActorId }));
     setDisplayName(name);
     setActorId(nextActorId);
