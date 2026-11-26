@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { optimizedMediaUrl } from "@/lib/media-url";
 import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
@@ -29,6 +30,7 @@ export default function PostDetailModal({
     return [];
   }, [post]);
 
+  const [portalReady, setPortalReady] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
@@ -37,6 +39,19 @@ export default function PostDetailModal({
   const mediaFrameRef = useRef<HTMLDivElement | null>(null);
   const isReel = post.format?.trim().toLocaleLowerCase("pt-BR") === "reels";
   const isCarousel = media.length > 1 && !isReel;
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!portalReady) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [portalReady]);
 
   const getVideoPoster = (index: number): string | undefined => {
     for (let distance = 1; distance < media.length; distance += 1) {
@@ -158,7 +173,9 @@ export default function PostDetailModal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [media.length, onClose, activeIndex]);
 
-  return (
+  if (!portalReady) return null;
+
+  return createPortal(
     <div
       className={
         "fixed inset-0 z-[100] flex items-center justify-center " +
@@ -230,9 +247,11 @@ export default function PostDetailModal({
                       muted={isCarousel}
                       loop={isCarousel}
                       preload={
-                        isCarousel
-                          ? Math.abs(index - activeIndex) <= 1 ? "auto" : "metadata"
-                          : index === activeIndex ? "metadata" : "none"
+                        index === activeIndex
+                          ? "auto"
+                          : Math.abs(index - activeIndex) === 1
+                            ? "metadata"
+                            : "none"
                       }
                       className={
                         isReel
@@ -443,6 +462,7 @@ export default function PostDetailModal({
           </div>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
