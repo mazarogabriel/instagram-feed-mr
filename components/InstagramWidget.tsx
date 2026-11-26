@@ -40,6 +40,7 @@ interface InstagramWidgetProps {
   profile: Profile;
   highlights: Highlight[];
   userEmail: string;
+  userId: string;
 }
 
 interface ProfileConfig {
@@ -60,6 +61,7 @@ export default function InstagramWidget({
   profile,
   highlights,
   userEmail,
+  userId,
 }: InstagramWidgetProps) {
   const profileConfigs: Record<ProfileKey, ProfileConfig> = {
     mr: {
@@ -662,6 +664,7 @@ export default function InstagramWidget({
         <PostDetailModal
           post={selectedPost}
           profileName={activeProfileData.displayName}
+          userId={userId}
           loadingMedia={selectedPostLoading}
           mediaError={selectedPostError}
           onClose={() => {
