@@ -1,60 +1,36 @@
 # Supabase setup — Instagram Feed MR
 
-Complete these steps once in the Supabase project connected to the Vercel app.
+The preview uses a simple team name instead of email authentication. Supabase stores the team directory, approvals and comments.
 
-## 1. Authentication settings
+## 1. Environment variables
 
-In **Authentication → Sign In / Providers**, keep the **Email** provider enabled.
+The Vercel project must contain:
 
-In the authentication settings, disable **Allow new users to sign up**. Team accounts must be created manually by an administrator. The application sends a magic link only to existing users (shouldCreateUser: false).
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-In **Authentication → URL Configuration**, set:
+These were configured for Preview and Production. Do not add a service-role key to the browser app.
 
-- Site URL: https://instagram-feed-mr.vercel.app
-- Redirect URL: https://instagram-feed-mr.vercel.app/auth/callback
+## 2. Install the device-name schema
 
-The redirect URL must match exactly.
+Open **SQL Editor → New query** in the Supabase project and run the complete contents of:
 
-## 2. Create the database tables and policies
+`supabase/migrations/20261126000100_device_name_feedback.sql`
 
-Open **SQL Editor → New query**, paste and run the migration:
+This creates/upgrades:
 
-supabase/migrations/20261125000100_team_feedback.sql
+- `team_display_names`: names that can enter the platform;
+- `post_likes_by_name`: approvals linked to the selected device identity;
+- `post_comments_by_name`: comments linked to the selected device identity.
 
-The migration creates:
-- team_members: explicit allowlist of users who can access the app;
-- post_likes: one approval per user and Notion post;
-- post_comments: comments linked to the author and Notion post;
-- Row Level Security policies for all three tables.
+The migration is safe to run if the earlier draft of the device-name migration was already applied.
 
-The migration also adds the Auth users already created with an @melinaromano.com address to team_members. This includes the initial test account if it uses that domain.
+## 3. Add a name
 
-## 3. Add later team accounts to the allowlist
+On the platform's first screen, choose **Criar usuário**, type the person's name and submit. The name becomes available for future sign-ins through **Entrar**. The browser stores the selected identity so that the same device does not need to enter it again.
 
-Create each additional Auth user manually in **Authentication → Users → Add user → Create user**, with **Auto Confirm User** enabled.
+To disable a name, change `enabled` to `false` in `public.team_display_names`.
 
-After creating the users, run this query in SQL Editor to add all current corporate Auth users to the team allowlist:
+## 4. Important limitation
 
-```sql
-insert into public.team_members (user_id, email, display_name)
-select
-  id,
-  lower(email),
-  coalesce(
-    nullif(raw_user_meta_data ->> 'full_name', ''),
-    split_part(lower(email), '@', 1)
-  )
-from auth.users
-where email is not null
-  and lower(email) like '%@melinaromano.com'
-on conflict (user_id) do update
-  set email = excluded.email;
-```
-
-The displayed name initially comes from the email prefix. It can be edited in public.team_members.display_name to show the person's preferred name.
-
-## 4. Sign-in test
-
-Open https://instagram-feed-mr.vercel.app, enter the existing test account's corporate email, and open the received magic link. The app should return to the feed with the signed-in email visible in the top bar.
-
-If the feed is embedded in Notion, test the standalone URL first. Some browsers block third-party cookies or storage inside embedded pages; if the Notion embed does not retain the session, use the app link in the same browser or adjust the embedding/auth flow after testing.
+This is a convenience gate, not identity verification. Anyone with the platform link can create a name or select an existing name. Do not use it for confidential or legally attributable approvals.
