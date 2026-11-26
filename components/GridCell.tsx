@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { cn, formatDate } from "@/lib/utils";
+import { optimizedMediaUrl } from "@/lib/media-url";
 import type { NotionPost } from "@/lib/types";
 import { CalendarDays, Play, Copy } from "lucide-react";
 
@@ -57,14 +57,14 @@ export default function GridCell({ post, onClick }: GridCellProps) {
             className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
         ) : post.thumbnail && !imgError ? (
-          <Image
-            src={post.thumbnail}
+          <img
+            src={optimizedMediaUrl(post.thumbnail, 384, 60)}
             alt={post.title}
-            fill
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             onError={() => setImgError(true)}
-            sizes="(max-width: 430px) 33vw, 140px"
-            quality={60}
           />
         ) : (
           <PlaceholderCell title={post.title} />
