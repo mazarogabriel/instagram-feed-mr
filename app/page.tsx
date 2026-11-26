@@ -10,7 +10,7 @@ export const revalidate = 0;
 function getProfile(): Profile {
   return {
     username: process.env.NEXT_PUBLIC_PROFILE_USERNAME ?? "mr.melinaromano",
-    displayName: process.env.NEXT_PUBLIC_PROFILE_DISPLAY_NAME ?? "Melina Romano Studio",
+    displayName: process.env.NEXT_PUBLIC_PROFILE_DISPLAY_NAME ?? "Melina Romano",
     bio: process.env.NEXT_PUBLIC_PROFILE_BIO ?? "Arquitetura, interiores, design e arte.",
     website: process.env.NEXT_PUBLIC_PROFILE_WEBSITE ?? "",
     avatarUrl: process.env.NEXT_PUBLIC_PROFILE_AVATAR_URL ?? "/mr-profile.jpg",
