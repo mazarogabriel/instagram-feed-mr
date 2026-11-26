@@ -111,7 +111,7 @@ export default function InstagramWidget({
       logo: "/mr-profile.jpg",
       profile: {
         ...profile,
-        displayName: "Melina Romano Studio",
+        displayName: "Melina Romano",
         username: "mr.melinaromano",
         avatarUrl: "/mr-profile.jpg",
       },
