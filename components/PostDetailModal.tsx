@@ -6,10 +6,12 @@ import { optimizedMediaUrl } from "@/lib/media-url";
 import { X, ExternalLink, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Images, Play } from "lucide-react";
 import type { NotionPost, StoryMedia } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
+import PostFeedback from "./PostFeedback";
 
 interface PostDetailModalProps {
   post: NotionPost;
   profileName: string;
+  userId: string;
   loadingMedia?: boolean;
   mediaError?: string;
   onClose: () => void;
@@ -18,6 +20,7 @@ interface PostDetailModalProps {
 export default function PostDetailModal({
   post,
   profileName,
+  userId,
   loadingMedia = false,
   mediaError,
   onClose,
@@ -438,6 +441,7 @@ export default function PostDetailModal({
             <p className={"whitespace-pre-wrap text-[13px] leading-[1.75] " + "text-[#262626]"}>
               {post.caption || "A legenda ainda não foi preenchida nesta publicação."}
             </p>
+            <PostFeedback postId={post.id} userId={userId} />
           </div>
 
           <div
