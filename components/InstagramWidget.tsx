@@ -375,7 +375,7 @@ export default function InstagramWidget({
 
     const timer = window.setInterval(() => {
       void checkForUpdates();
-    }, 10_000);
+    }, 60_000);
 
     return () => {
       disposed = true;
@@ -651,7 +651,7 @@ export default function InstagramWidget({
                 minute: "2-digit",
               })
             : ""}
-          {" · Verificação automática a cada 10 s"}
+          {" · Verificação automática a cada 60 s"}
         </p>
       </div>
 
