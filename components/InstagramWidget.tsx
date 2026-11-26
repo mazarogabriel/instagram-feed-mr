@@ -34,52 +34,6 @@ interface CachedPostMedia {
 }
 
 const MEDIA_CACHE_TTL = 45 * 60 * 1000;
-const MEDIA_BATCH_SIZE = 4;
-
-function preloadImage(url: string, width = 1200, quality = 75): Promise<void> {
-  return new Promise((resolve) => {
-    const image = new window.Image();
-    image.decoding = "async";
-    image.onload = () => resolve();
-    image.onerror = () => resolve();
-    image.src = optimizedMediaUrl(url, width, quality);
-    if (image.complete) resolve();
-  });
-}
-
-async function preloadGridThumbnails(posts: NotionPost[]): Promise<void> {
-  const thumbnails = posts
-    .map((post) => post.thumbnail)
-    .filter((url): url is string => Boolean(url));
-
-  // Warm the exact optimized URLs used by GridCell for both profiles,
-  // including the profile that is not currently visible in the interface.
-  for (let index = 0; index < thumbnails.length; index += 4) {
-    await Promise.all(
-      thumbnails
-        .slice(index, index + 4)
-        .map((url) => preloadImage(url, 384, 60))
-    );
-  }
-}
-
-async function preloadMediaAssets(media: StoryMedia[]): Promise<void> {
-  const images = media.filter((item) => item.kind === "image");
-  for (let index = 0; index < images.length; index += 2) {
-    await Promise.all(images.slice(index, index + 2).map((item) => preloadImage(item.url)));
-  }
-
-  // For video, fetch metadata only. Full video files can be very large and
-  // should stream when opened rather than silently consuming the user's data.
-  media
-    .filter((item) => item.kind === "video")
-    .forEach((item) => {
-      const video = document.createElement("video");
-      video.preload = "metadata";
-      video.src = item.url;
-      video.load();
-    });
-}
 
 interface InstagramWidgetProps {
   initialProfiles: Record<ProfileKey, InitialSnapshot>;
@@ -176,10 +130,6 @@ export default function InstagramWidget({
   const postMediaCache = useRef<Record<ProfileKey, Map<string, CachedPostMedia>>>({
     mr: new Map(),
     lab: new Map(),
-  });
-  const preloadingProfiles = useRef<Record<ProfileKey, boolean>>({
-    mr: false,
-    lab: false,
   });
   const [storiesOpen, setStoriesOpen] = useState(false);
   const [lastUpdatedByProfile, setLastUpdatedByProfile] = useState<Record<ProfileKey, Date | null>>({
@@ -507,7 +457,6 @@ export default function InstagramWidget({
                   }
                 : current
             );
-            void preloadMediaAssets(media);
           }
         }
       } catch (error) {
@@ -523,129 +472,6 @@ export default function InstagramWidget({
       }
     })();
   };
-
-  // After the thumbnails have rendered, progressively fetch full media
-  // metadata for both profiles. Each profile is processed newest to oldest,
-  // in small batches, and image downloads are limited to two at a time.
-  useEffect(() => {
-    let cancelled = false;
-    let started = false;
-
-    const prefetchProfile = async (profileKey: ProfileKey) => {
-      if (preloadingProfiles.current[profileKey]) return;
-      preloadingProfiles.current[profileKey] = true;
-
-      try {
-        const newestFirst = [...(postsByProfile[profileKey] ?? [])]
-          .filter((post) => post.status === "Publicado" || post.status === "Concluído")
-          .sort((a, b) => {
-            const dateA = a.publishDate ? new Date(a.publishDate).getTime() : 0;
-            const dateB = b.publishDate ? new Date(b.publishDate).getTime() : 0;
-            return dateB - dateA;
-          });
-
-        // Priority: the first 12 feed posts at the top, then published Stories,
-        // then older posts only after the user has requested another batch.
-        const regularPosts = newestFirst.filter((post) => post.format !== "Stories");
-        const firstTwelve = regularPosts.slice(0, 12);
-        const publishedStories = newestFirst.filter(
-          (post) => post.status === "Publicado" && post.format === "Stories"
-        );
-        // First warm the visible-size thumbnails for this profile. Both
-        // profile queues start together, so LAB is ready before it is selected.
-        await preloadGridThumbnails(firstTwelve);
-        if (cancelled) return;
-
-        // Full post metadata follows the first 12, then published Stories.
-        // Older pages only enter this queue after the user loads another batch.
-        const candidates = [...firstTwelve, ...publishedStories];
-
-        for (let index = 0; index < candidates.length && !cancelled; index += MEDIA_BATCH_SIZE) {
-          const batch = candidates
-            .slice(index, index + MEDIA_BATCH_SIZE)
-            .filter((post) => {
-              const cached = postMediaCache.current[profileKey].get(post.id);
-              return !cached || Date.now() - cached.loadedAt >= MEDIA_CACHE_TTL;
-            });
-
-          if (batch.length === 0) continue;
-
-          try {
-            const response = await fetch("/api/posts/media/batch", {
-              method: "POST",
-              cache: "no-store",
-              headers: {
-                "Content-Type": "application/json",
-                "Cache-Control": "no-cache, no-store",
-                Pragma: "no-cache",
-              },
-              body: JSON.stringify({
-                profile: profileKey,
-                pageIds: batch.map((post) => post.id),
-              }),
-            });
-
-            if (!response.ok) continue;
-            const data = await response.json();
-            const results = data.results as Record<
-              string,
-              { media: StoryMedia[]; caption: string | null }
-            > | undefined;
-
-            if (!results || cancelled) continue;
-
-            // Store all metadata first, then download the actual image bytes
-            // in publication order before moving to older posts.
-            const mediaToPreload: StoryMedia[] = [];
-            for (const post of batch) {
-              const details = results[post.id];
-              if (!details || !Array.isArray(details.media)) continue;
-
-              postMediaCache.current[profileKey].set(post.id, {
-                media: details.media,
-                caption: details.caption ?? post.caption,
-                loadedAt: Date.now(),
-              });
-              mediaToPreload.push(...details.media);
-            }
-
-            await preloadMediaAssets(mediaToPreload);
-          } catch {
-            // A failed batch does not block the rest of the background queue.
-          }
-        }
-      } finally {
-        preloadingProfiles.current[profileKey] = false;
-      }
-    };
-
-    const waitAndPrefetchProfile = async (profileKey: ProfileKey) => {
-      // If an older prefetch cycle is finishing after a Notion refresh,
-      // wait for it to release the profile queue before starting the new one.
-      while (preloadingProfiles.current[profileKey] && !cancelled) {
-        await new Promise((resolve) => window.setTimeout(resolve, 250));
-      }
-      if (!cancelled) await prefetchProfile(profileKey);
-    };
-
-    const startPrefetch = () => {
-      if (started || document.visibilityState !== "visible") return;
-      started = true;
-      void Promise.all([
-        waitAndPrefetchProfile("mr"),
-        waitAndPrefetchProfile("lab"),
-      ]);
-    };
-
-    const timer = window.setTimeout(startPrefetch, 250);
-    document.addEventListener("visibilitychange", startPrefetch);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", startPrefetch);
-    };
-  }, [postsByProfile]);
 
   const activeConfig = profileConfigs[activeProfile];
   const activeProfileData = activeConfig.profile;
